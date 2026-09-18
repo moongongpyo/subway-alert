@@ -40,7 +40,7 @@ def deploy(args):
     # A list failure is fatal, never interpreted as permission to create duplicates.
     existing = {s.name: s for s in client.list() if s.name in NAMES.values()}
     state = json.loads(STATE.read_text()) if STATE.exists() else {}
-    server_env = {"APP_MODE": "DEMO", "AGENT_TOKEN": secrets["AGENT_TOKEN"], "APP_ADMIN_TOKEN": secrets["APP_ADMIN_TOKEN"], "SEOUL_API_KEY": os.getenv("SEOUL_API_KEY", "")}
+    server_env = {"APP_MODE": "DEMO", "AGENT_TOKEN": secrets["AGENT_TOKEN"], "APP_ADMIN_TOKEN": secrets["APP_ADMIN_TOKEN"], "SEOUL_API_KEY": os.getenv("SEOUL_API_KEY", ""), "TMAP_APP_KEY": os.getenv("TMAP_APP_KEY", "")}
     for role, name in NAMES.items():
         sandbox = existing.get(name)
         if args.stop:
@@ -71,7 +71,7 @@ if p.exists():
   if p.exists(): raise RuntimeError('Old service did not stop; refusing a duplicate')
 """
         command(sandbox, "python -c " + shlex.quote(stop_old))
-        for local, remote in [(ROOT/"agents/worker.py", "worker.py"), (ROOT/"scripts/sandbox_runner.py", "sandbox_runner.py")]:
+        for local, remote in [(ROOT/"agents/worker.py", "worker.py"), (ROOT/"agents/route_worker.py", "route_worker.py"), (ROOT/"scripts/sandbox_runner.py", "sandbox_runner.py")]:
             sandbox.fs.upload_file(str(local), "/app/subway-alert/"+remote)
         env = {"AGENT_ROLE": role, "AGENT_TOKEN": secrets["AGENT_TOKEN"], "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""), "OPENAI_MODEL": os.getenv("OPENAI_MODEL", "gpt-4.1-mini"), "PORT": "8000", "PYTHONUNBUFFERED": "1"}
         sandbox.fs.upload_file(json.dumps({"env": env, "command": ["python", "worker.py"], "run_hours": args.hours}).encode(), "/app/subway-alert/runtime.json")

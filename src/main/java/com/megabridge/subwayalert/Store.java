@@ -53,6 +53,16 @@ public class Store {
         return jdbc.query("SELECT used_calls FROM api_budget WHERE budget_day=?",(rs,n)->rs.getInt(1),
                 LocalDate.now(ZoneId.of("Asia/Seoul")).toString()).stream().findFirst().orElse(0);
     }
+    public synchronized boolean reserveProviderCalls(String provider,int count,int limit) {
+        String day=LocalDate.now(ZoneId.of("Asia/Seoul")).toString();
+        try { jdbc.update("INSERT INTO provider_budget(provider,budget_day,used_calls) VALUES(?,?,0)",provider,day); }
+        catch(DuplicateKeyException ignored) { }
+        return jdbc.update("UPDATE provider_budget SET used_calls=used_calls+? WHERE provider=? AND budget_day=? AND used_calls+?<=?",count,provider,day,count,limit)==1;
+    }
+    public int providerCallsToday(String provider) {
+        return jdbc.query("SELECT used_calls FROM provider_budget WHERE provider=? AND budget_day=?",(rs,n)->rs.getInt(1),provider,
+                LocalDate.now(ZoneId.of("Asia/Seoul")).toString()).stream().findFirst().orElse(0);
+    }
     public void prune() {
         String cutoff=ORDERED_TIME.format(Instant.now().minusSeconds(7*86400));
         jdbc.update("DELETE FROM app_records WHERE kind IN ('observation','message','job','run') AND created_at<?",cutoff);

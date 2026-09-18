@@ -10,7 +10,7 @@
 
 ## 1. 에이전트 배포
 
-Python 3.11 이상. `.env`에 `DAYTONA_API_KEY`, `OPENAI_API_KEY`, `SEOUL_API_KEY`를 넣은 뒤:
+Python 3.11 이상. `.env`에 `DAYTONA_API_KEY`, `OPENAI_API_KEY`, `TMAP_APP_KEY`를 넣습니다. 보조 관측을 쓰려면 `SEOUL_API_KEY`도 넣은 뒤:
 
 ```powershell
 python -m venv .venv
@@ -32,7 +32,7 @@ macOS/Linux는 `.venv/bin/python`을 사용합니다. 스크립트가 기존의 
 
 ## 2. Railway
 
-1. GitHub `moongongpyo/subway-alert`를 서비스 소스로 지정합니다. `Dockerfile`과 `railway.toml`을 자동 사용합니다.
+1. GitHub `moongongpyo/subway-alert`를 서비스 소스로 지정합니다. `Dockerfile`은 자동 감지합니다. 2026-08-28 이후 신규 서비스는 기존 Config-as-Code 방식에 가입할 수 없으므로 `railway.toml`은 참고값입니다. Settings에서 Healthcheck `/actuator/health`, On Failure 재시작 3회, Replica 1을 직접 설정합니다. [공식 안내](https://docs.railway.com/config-as-code).
 2. 같은 프로젝트에 PostgreSQL 서비스 이름 `Postgres`를 생성합니다.
 3. Spring 서비스 Variables에 다음을 추가합니다. **문자 그대로 Railway 변수 참조를 사용합니다.**
 
@@ -51,8 +51,11 @@ APP_MODE=DEMO
 
 ## 운영 범위와 제한
 
+- 핵심 경로: TMAP 일일 예산 기본 10건. 사용자 검색에만 호출, 같은 좌표/이름 5분 메모리 캐시, 최대 10개 후보. 회피 변경은 TMAP을 추가 호출하지 않습니다. [공식 경로 API](https://transit.tmapmobility.com/docs/routes), [이용약관](https://transit.tmapmobility.com/terms).
+- 경로 세션도 5분 후 만료하며 재배포 시 사라집니다. 사용자별 검색은 5분에 최대 10개, 서버 전체 최대 200개. PostgreSQL에는 TMAP 응답을 저장하지 않습니다.
+- 경로 AI: 검색/회피 변경 때 A→B. 수정은 최대 1회, 역할별 50초/내부 42초 제한. 비동기 상태 조회로 진행 상황 표시. AI 미연결은 서버 규칙 검사라고 표시하고, 연결된 AI 검증에 실패하면 추천을 보류합니다.
 - 기본 2분 간격, 수집 1회 위치 1건 + 역별 도착 3건, 일일 상한 900건. 재시도·추가 조회도 예산을 차감합니다. 24시간 상시 수집 예산이 아니며, 재조회 제외 약 7.5시간에 해당합니다. 할당량을 확인하고 시연/출퇴근 시간에 LIVE를 사용하세요.
-- LLM은 후보가 발견될 때만 호출. 탐지 → 검증 → 최대 2회 재조회. 에이전트 작업 제한 50초, worker 내부 LLM 도구 루프 42초/5회. 초과하면 보류.
+- 보조 관측 LLM은 지연 후보가 발견될 때만 호출. 탐지 → 검증 → 최대 2회 재조회. 에이전트 작업 제한 50초, worker 내부 LLM 도구 루프 42초/5회. 초과하면 보류.
 - 웹 알림은 DB에 저장합니다. 브라우저 알림은 사용자가 허용하고 페이지를 열어 둔 동안만 표시합니다. SMS/메일/Web Push 백그라운드 전송은 이번 MVP 범위 밖입니다.
 - 익명 구독은 브라우저 HttpOnly 쿠키 기준입니다. 사용자 계정/다기기 동기화는 없습니다.
 - 서버 1개 replica 기준의 작업 직렬화와 SQL 원자적 사용량/알림 중복 방지. 여러 replica 운영 전에는 분산 작업 잠금과 외부 큐가 필요합니다.
@@ -62,10 +65,12 @@ APP_MODE=DEMO
 
 ## 발표 리허설
 
+주 시연은 [PLAN.md의 경로 시연](PLAN.md#해커톤-시연)을 따릅니다. 아래는 보조 지연 알림 시연입니다.
+
 1. `역삼 / 내선` 구독 → 연결 및 시연에서 같은 구간 선택.
 2. `지연 징후` → 활동 화면의 read_observations / check_freshness / REQUEST_REFRESH 확인.
 3. 내 알림에 `[시연] … 지연 의심` 1건. 같은 상황 다시 실행해도 같은 사건 단계의 알림 수는 증가하지 않음.
 4. `오래된 데이터`, `수집 실패`, `타임아웃`, `잘못된 응답` → 새 지연 알림 없음.
 5. `관측 회복` → 위치 이동/ETA 감소 및 별도 회복 안내. 공식 운행 복구 확정과 구분.
 
-검증 명령: `./gradlew test bootJar`, `python -m unittest discover -s agents -v`, `node --check src/main/resources/static/app.js`.
+검증 명령: `./gradlew test bootJar`, `python -m unittest discover -s agents -v`, `python scripts/smoke_workers.py`, 두 JS 파일에 `node --check`.

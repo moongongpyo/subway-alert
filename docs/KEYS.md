@@ -4,9 +4,14 @@
 
 | 필요한 값 | 발급 위치 | 넣는 곳 / 설명 |
 | --- | --- | --- |
-| `SEOUL_API_KEY` | [서울 열린데이터광장 인증키 안내](https://data.seoul.go.kr/together/guide/useGuide.do) | Spring 서버. 실시간 지하철 API 사용이 가능한 키. 일반 공공데이터포털 키와 다름 |
+| `TMAP_APP_KEY` | [TMAP 대중교통 API 이용절차](https://transit.tmapmobility.com/guide/procedure) | Spring 서버. SK Open API 앱 키 + **대중교통 경로탐색 상품** 이용권한 |
+| `SEOUL_API_KEY` (보조 관측용) | [서울 열린데이터광장 인증키 안내](https://data.seoul.go.kr/together/guide/useGuide.do) | Spring 서버. 실시간 지하철 API 사용이 가능한 키. 경로 안내만 쓸 때는 필요 없음 |
 | `OPENAI_API_KEY` | [OpenAI API Keys](https://platform.openai.com/api-keys) | Daytona의 탐지·검증 에이전트. 두 샌드박스에서 같은 프로젝트 키 사용 가능 |
 | `DAYTONA_API_KEY` | [Daytona API Keys](https://app.daytona.io/dashboard/keys) | 로컬 배포 스크립트만 사용. 샌드박스를 만든 **Personal 조직**에서 발급 |
+
+핵심 경로 + 실제 AI 연결은 TMAP / OpenAI / Daytona 3개입니다. 서울시 보조 관측까지 한 번에 연결하려면 4개를 준비합니다.
+
+TMAP은 [이용약관](https://transit.tmapmobility.com/terms)의 무료 경로탐색 10회/일 기준으로 `TMAP_DAILY_BUDGET=10`을 기본 설정했습니다. 실제 발급 상품의 할당량을 확인하세요. 자동 주기 조회 없이 사용자 검색 때만 호출하며 회피 조건 변경은 캐시된 후보를 사용합니다.
 
 - OpenAI API는 [API 결제](https://platform.openai.com/settings/organization/billing/overview)가 별도입니다. ChatGPT 구독과 별개입니다. 기본 모델은 `gpt-4.1-mini`, `OPENAI_MODEL`로 바꿀 수 있습니다.
 - 서울시 데이터: [실시간 도착정보](https://data.seoul.go.kr/dataList/OA-12764/A/1/datasetView.do), [열차 위치정보](https://data.seoul.go.kr/dataList/OA-12601/A/1/datasetView.do). 샘플 키는 제한된 대상 검증용이며 강남·역삼·선릉 운영 키를 대체하지 않습니다.

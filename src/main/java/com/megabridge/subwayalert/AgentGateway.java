@@ -21,6 +21,23 @@ public class AgentGateway {
     @Value("${app.agent-timeout-seconds}") private int timeout;
     public AgentGateway(JsonMapper json) { this.json=json; }
     public boolean configured() { return !detectorUrl.isBlank() && !verifierUrl.isBlank() && !token.isBlank(); }
+    public RoutingService.Decision route(String role,TmapClient.RoutePlan plan,List<RouteRules.Block> blocks,RoutingService.Decision proposal,int attempt) throws Exception {
+        Map<String,Object> body=new LinkedHashMap<>();
+        body.put("requestId",UUID.randomUUID().toString()); body.put("role",role); body.put("plan",plan);
+        body.put("blocks",blocks); body.put("proposal",proposal); body.put("attempt",attempt);
+        String url=role.equals("detector")?detectorUrl:verifierUrl,preview=role.equals("detector")?detectorPreview:verifierPreview;
+        var builder=HttpRequest.newBuilder(URI.create(url.replaceAll("/+$","")+"/route"))
+                .timeout(Duration.ofSeconds(timeout)).header("Content-Type","application/json").header("Authorization","Bearer "+token);
+        if(!preview.isBlank()) builder.header("x-daytona-preview-token",preview);
+        var response=http.send(builder.POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body))).build(),HttpResponse.BodyHandlers.ofString());
+        if(response.statusCode()!=200 || response.body().length()>100_000) throw new IllegalStateException("경로 에이전트 응답 오류");
+        var result=json.readValue(response.body(),RoutingService.Decision.class);
+        if(result==null || result.routeId()==null || result.reason()==null || result.reason().isBlank() || result.reason().length()>1200
+                || result.tools()==null || result.tools().size()>12 || !Set.of("PROPOSE","APPROVED","REVISE","NO_ALTERNATIVE").contains(result.verdict())
+                || !Set.of("openai","simulation").contains(result.engine())) throw new IllegalArgumentException("경로 에이전트 형식 오류");
+        if(plan.provider().equals("TMAP") && !result.engine().equals("openai")) throw new IllegalArgumentException("실제 경로는 실제 AI 검증 필요");
+        return result;
+    }
     public AgentResult call(AgentRequest request) throws Exception {
         if(!configured()) {
             if(request.mode()==Mode.LIVE) throw new IllegalStateException("AI 에이전트 연결 설정이 필요합니다.");

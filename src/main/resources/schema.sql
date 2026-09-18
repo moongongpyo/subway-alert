@@ -10,3 +10,9 @@ CREATE TABLE IF NOT EXISTS api_budget (
     budget_day VARCHAR(10) PRIMARY KEY,
     used_calls INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS provider_budget (
+    provider VARCHAR(30) NOT NULL,
+    budget_day VARCHAR(10) NOT NULL,
+    used_calls INTEGER NOT NULL,
+    PRIMARY KEY(provider,budget_day)
+);

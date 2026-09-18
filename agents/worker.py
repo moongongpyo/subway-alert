@@ -9,6 +9,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from route_worker import analyze_route
 
 ROLE = os.getenv("AGENT_ROLE", "detector")
 TOKEN = os.getenv("AGENT_TOKEN", "")
@@ -198,7 +199,7 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, {"status": "ok", "role": ROLE, "engine": "openai" if OPENAI_KEY else "simulation"})
 
     def do_POST(self):
-        if self.path != "/analyze":
+        if self.path not in {"/analyze", "/route"}:
             return self.reply(404, {"error": "not_found"})
         if not TOKEN or not hmac.compare_digest(self.headers.get("Authorization", ""), f"Bearer {TOKEN}"):
             return self.reply(401, {"error": "unauthorized"})
@@ -212,7 +213,7 @@ class Handler(BaseHTTPRequestHandler):
             raw = self.rfile.read(length)
             job = json.loads(raw)
             # Include the payload hash: reusing an ID with changed evidence is not a cache hit.
-            cache_key = (job.get("requestId"), hashlib.sha256(raw).hexdigest())
+            cache_key = (self.path, job.get("requestId"), hashlib.sha256(raw).hexdigest())
             with LOCK:
                 now = time.monotonic()
                 for key in list(CACHE):
@@ -221,7 +222,7 @@ class Handler(BaseHTTPRequestHandler):
                 cached = CACHE.get(cache_key)
             if cached:
                 return self.reply(200, cached[1])
-            result = analyze(job)
+            result = analyze_route(job, ROLE, OPENAI_KEY, MODEL) if self.path == "/route" else analyze(job)
             with LOCK:
                 if len(CACHE) >= 200:
                     CACHE.pop(next(iter(CACHE)))

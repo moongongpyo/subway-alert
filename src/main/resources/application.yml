@@ -38,6 +38,9 @@ app:
   seoul-key: ${SEOUL_API_KEY:}
   seoul-base-url: ${SEOUL_BASE_URL:http://swopenapi.seoul.go.kr/api/subway}
   seoul-daily-budget: ${SEOUL_DAILY_BUDGET:900}
+  tmap-key: ${TMAP_APP_KEY:}
+  tmap-url: ${TMAP_API_URL:https://apis.openapi.sk.com/transit/routes}
+  tmap-daily-budget: ${TMAP_DAILY_BUDGET:10}
   detector-url: ${DETECTOR_URL:}
   verifier-url: ${VERIFIER_URL:}
   detector-preview-token: ${DETECTOR_PREVIEW_TOKEN:}

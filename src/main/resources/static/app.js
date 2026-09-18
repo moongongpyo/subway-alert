@@ -24,8 +24,8 @@ async function api(path, method = 'GET', body) {
   } finally { clearTimeout(timer); }
 }
 function navigate() {
-  const titles = {overview:'운행 대시보드',agents:'에이전트 활동',alerts:'내 알림',settings:'연결 및 시연'};
-  const page = Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
+  const titles = {routes:'대안 경로 안내',overview:'운행 대시보드',agents:'에이전트 활동',alerts:'내 알림',settings:'연결 및 시연'};
+  const page = Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1) : 'routes';
   $$('.page').forEach(p => p.hidden = p.id !== 'page-' + page);
   $$('.nav-link').forEach(link => { const selected = link.dataset.page === page; link.classList.toggle('active',selected); if(selected) link.setAttribute('aria-current','page'); else link.removeAttribute('aria-current'); });
   $('#page-title').textContent = titles[page];
@@ -98,7 +98,7 @@ function render() {
   $('#engine-status').textContent = !data.settings.agentsConfigured ? '로컬 규칙 기반 시뮬레이션' : data.jobs[0]?.engine === 'openai' ? 'OpenAI 도구 호출 연결' : '샌드박스 연결 · 실행 기록 확인';
   const unread = data.notifications.filter(n => !n.read).length; $('#unread-count').textContent = unread; $('#nav-count').textContent = unread;
   const status = $('#settings-status'); status.replaceChildren();
-  for(const [title,ready,description] of [['서울시 위치·도착 API',data.settings.seoulConfigured,'서버 키 설정'],['Daytona 에이전트 A · B',data.settings.agentsConfigured,'연결 주소 설정'],['현재 모드',true,demo ? 'DEMO · 합성 데이터' : 'LIVE · 실제 데이터']]) { const row = el('div','setting-row'); row.append(el('strong','',title),el('span',ready?'ready':'',ready?description:'설정 필요')); status.append(row); }
+  for(const [title,ready,description] of [['TMAP 경로 API',data.settings.tmapConfigured,`오늘 ${data.settings.tmapCallsToday} / ${data.settings.tmapDailyBudget}회`],['서울시 위치·도착 API',data.settings.seoulConfigured,'보조 관측용'],['Daytona 에이전트 A · B',data.settings.agentsConfigured,'연결 주소 설정'],['관측 데이터 모드',true,demo ? 'DEMO · 합성 데이터' : 'LIVE · 실제 데이터']]) { const row = el('div','setting-row'); row.append(el('strong','',title),el('span',ready?'ready':'',ready?description:'설정 필요')); status.append(row); }
   $('#quota-text').textContent = `${data.settings.callsToday} / ${data.settings.dailyBudget}`; $('#quota-progress').max = data.settings.dailyBudget; $('#quota-progress').value = data.settings.callsToday;
   $$('[data-scenario]').forEach(button => button.disabled = data.busy || !demo);
   $('#set-demo').disabled = data.busy || demo; $('#set-live').disabled = data.busy || !demo || !data.settings.seoulConfigured || !data.settings.agentsConfigured; $('#collect-now').disabled = data.busy || demo;
@@ -106,6 +106,7 @@ function render() {
   renderRoute(); renderSubscriptions(); renderActivity(); renderAlerts($('#recent-alerts'),data.notifications.slice(0,3),false); renderAlerts($('#all-alerts'),data.notifications,true);
   for(const n of data.notifications) { if(!initial && !seenNotices.has(n.id) && 'Notification' in window && Notification.permission === 'granted') new Notification(n.title,{body:n.body,tag:n.id,icon:'/favicon.svg'}); seenNotices.add(n.id); }
   initial = false;
+  if(typeof renderPlannerSettings === 'function') renderPlannerSettings();
 }
 async function refresh() {
   if(polling) return;

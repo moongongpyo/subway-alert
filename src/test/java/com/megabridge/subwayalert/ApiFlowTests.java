@@ -60,4 +60,23 @@ class ApiFlowTests {
         assertEquals(400,send(alice,"/admin/mode","POST",Map.of("mode","LIVE"),"test-admin").statusCode());
     }
     @Test void quotaStopsAtBudget() { assertTrue(store.reserveCalls(2,3)); assertFalse(store.reserveCalls(2,3)); assertTrue(store.reserveCalls(1,3)); assertEquals(3,store.callsToday()); }
+    @Test void routeReplanningIsPrivateAndNeverInventsAnAlternative() throws Exception {
+        var alice=client(); var bob=client(); dashboard(alice); dashboard(bob);
+        var request=Map.of("from",TmapClient.PLACES.get("강남"),"to",TmapClient.PLACES.get("선릉"),"provider","DEMO");
+        var response=send(alice,"/routes","POST",request,null); assertEquals(200,response.statusCode(),response.body());
+        var plan=json.readTree(response.body()); String path="/routes/"+plan.path("id").asText();
+        assertEquals("route-1",plan.path("recommendedId").asText());
+        assertEquals(404,send(bob,path,"GET",null,null).statusCode());
+        assertEquals(404,send(bob,path+"/avoid","POST",Map.of("legId","route-1-leg-0","scope","SEGMENT","reason","이용 불가"),null).statusCode());
+        for(var leg:List.of("route-1-leg-0","route-2-leg-1","route-4-leg-1")) {
+            response=send(alice,path+"/avoid","POST",Map.of("legId",leg,"scope","SEGMENT","reason","공사·통제"),null);
+            assertEquals(200,response.statusCode(),response.body()); plan=json.readTree(response.body());
+        }
+        assertEquals("NO_ALTERNATIVE",plan.path("state").asText()); assertEquals("",plan.path("recommendedId").asText());
+        String firstBlock=plan.path("blocks").get(0).path("id").asText();
+        plan=json.readTree(send(alice,path+"/avoid/"+firstBlock,"DELETE",null,null).body());
+        assertEquals("route-1",plan.path("recommendedId").asText());
+        assertEquals(400,send(alice,path+"/avoid","POST",Map.of("legId","invented","scope","LINE","reason","이용 불가"),null).statusCode());
+        assertEquals(503,send(alice,"/routes","POST",Map.of("from",TmapClient.PLACES.get("강남"),"to",TmapClient.PLACES.get("선릉"),"provider","TMAP"),null).statusCode());
+    }
 }

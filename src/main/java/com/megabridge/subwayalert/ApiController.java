@@ -20,10 +20,12 @@ public class ApiController {
     private final Coordinator coordinator;
     private final SeoulClient seoul;
     private final AgentGateway agents;
+    private final TmapClient tmap;
+    private final RoutingService routing;
     @Value("${app.admin-token}") private String adminToken;
     @Value("${app.poll-ms}") private long pollMs;
-    public ApiController(Store store,Coordinator coordinator,SeoulClient seoul,AgentGateway agents) {
-        this.store=store; this.coordinator=coordinator; this.seoul=seoul; this.agents=agents;
+    public ApiController(Store store,Coordinator coordinator,SeoulClient seoul,AgentGateway agents,TmapClient tmap,RoutingService routing) {
+        this.store=store; this.coordinator=coordinator; this.seoul=seoul; this.agents=agents; this.tmap=tmap; this.routing=routing;
     }
     @GetMapping("/dashboard")
     public Map<String,Object> dashboard(HttpServletRequest request,HttpServletResponse response) {
@@ -49,7 +51,24 @@ public class ApiController {
                 "notifications",store.list("notice",owner,50,Notice.class),"settings",Map.of(
                         "seoulConfigured",seoul.configured(),"agentsConfigured",agents.configured(),"callsToday",store.callsToday(),
                         "dailyBudget",seoul.budget(),"pollIntervalMs",pollMs,"freshSeconds",coordinator.freshness(),
-                        "adminTokenRequired",!adminToken.isBlank()),"serverTime",Instant.now());
+                        "adminTokenRequired",!adminToken.isBlank(),"tmapConfigured",tmap.configured(),
+                        "tmapCallsToday",tmap.callsToday(),"tmapDailyBudget",tmap.budget()),"serverTime",Instant.now());
+    }
+    public record RouteQuery(@NotNull TmapClient.Place from,@NotNull TmapClient.Place to,@NotBlank String provider) {}
+    @PostMapping("/routes")
+    public RoutingService.Snapshot routes(@Valid @RequestBody RouteQuery body,HttpServletRequest request,HttpServletResponse response) {
+        mutation(request); return routing.create(owner(request,response),body.from(),body.to(),body.provider());
+    }
+    @GetMapping("/routes/{id}")
+    public RoutingService.Snapshot route(@PathVariable String id,HttpServletRequest request,HttpServletResponse response) { return routing.get(owner(request,response),id); }
+    public record Avoid(@NotBlank String legId,@NotBlank String scope,@NotBlank String reason) {}
+    @PostMapping("/routes/{id}/avoid")
+    public RoutingService.Snapshot avoid(@PathVariable String id,@Valid @RequestBody Avoid body,HttpServletRequest request,HttpServletResponse response) {
+        mutation(request); return routing.avoid(owner(request,response),id,body.legId(),body.scope(),body.reason());
+    }
+    @DeleteMapping("/routes/{id}/avoid/{blockId}")
+    public RoutingService.Snapshot removeAvoid(@PathVariable String id,@PathVariable String blockId,HttpServletRequest request,HttpServletResponse response) {
+        mutation(request); return routing.remove(owner(request,response),id,blockId);
     }
     public record Subscribe(@NotBlank String station,@NotBlank String direction) {}
     @PostMapping("/subscriptions")
@@ -118,6 +137,10 @@ public class ApiController {
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String,String> invalid(IllegalArgumentException e) { return Map.of("message",e.getMessage()==null?"입력값을 확인하세요.":e.getMessage()); }
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String,String>> statusError(ResponseStatusException e) {
+        return ResponseEntity.status(e.getStatusCode()).body(Map.of("message",e.getReason()==null?"요청을 처리할 수 없습니다.":e.getReason()));
+    }
     @ExceptionHandler(IllegalStateException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public Map<String,String> conflict(IllegalStateException e) { return Map.of("message",e.getMessage()==null?"요청을 처리할 수 없습니다.":e.getMessage()); }

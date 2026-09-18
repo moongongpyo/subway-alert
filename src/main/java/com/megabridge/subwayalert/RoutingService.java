@@ -19,7 +19,6 @@ public class RoutingService {
     private static final class Session {
         final String id=UUID.randomUUID().toString(),owner;
         final RoutePlan plan;
-        boolean simulation;
         final List<Block> blocks=new ArrayList<>();
         final List<Trace> traces=new ArrayList<>();
         List<Assessment> assessments=List.of();
@@ -44,11 +43,10 @@ public class RoutingService {
         long owned=sessions.values().stream().filter(s->s.owner.equals(owner)).count();
         if(owned>=10) throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"검색은 5분에 10회까지 가능합니다.");
         var session=new Session(owner,provider.equals("DEMO")?RouteDemo.create(from,to):tmap.routes(from,to));
-        session.simulation=simulation; sessions.put(session.id,session); syncMocks(session); evaluate(session); return session.snapshot();
+        sessions.put(session.id,session); syncMocks(session); evaluate(session); return session.snapshot();
     }
     public Snapshot get(String owner,String id) { Session s=find(owner,id); synchronized(s) {if(!s.busy && syncMocks(s))evaluate(s);return s.snapshot();} }
     private boolean syncMocks(Session s) {
-        if(!s.simulation)return false;
         var active=mocks.blocks(Instant.now());
         var previous=s.blocks.stream().filter(b->b.source().equals("MOCK")).map(Block::id).collect(java.util.stream.Collectors.toSet());
         var next=active.stream().map(Block::id).collect(java.util.stream.Collectors.toSet());

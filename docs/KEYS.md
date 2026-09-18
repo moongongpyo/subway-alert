@@ -9,7 +9,7 @@
 | `OPENAI_API_KEY` | [OpenAI API Keys](https://platform.openai.com/api-keys) | Daytona의 탐지·검증 에이전트. 두 샌드박스에서 같은 프로젝트 키 사용 가능 |
 | `DAYTONA_API_KEY` | [Daytona API Keys](https://app.daytona.io/dashboard/keys) | 로컬 배포 스크립트만 사용. 샌드박스를 만든 **Personal 조직**에서 발급 |
 
-핵심 경로 + 실제 AI 연결은 TMAP / OpenAI / Daytona 3개입니다. 서울시 보조 관측까지 한 번에 연결하려면 4개를 준비합니다.
+2026-09-18 현재 OpenAI / Daytona 키 발급과 실제 AI 연결은 완료했습니다. 추가로 필요한 필수 키는 `TMAP_APP_KEY`이며, 서울시 보조 관측을 사용할 때만 `SEOUL_API_KEY`도 준비합니다. OpenAI 키는 발급 시 7일 만료로 설정했으므로 만료 후 교체해야 합니다.
 
 TMAP은 [이용약관](https://transit.tmapmobility.com/terms)의 무료 경로탐색 10회/일 기준으로 `TMAP_DAILY_BUDGET=10`을 기본 설정했습니다. 실제 발급 상품의 할당량을 확인하세요. 자동 주기 조회 없이 사용자 검색 때만 호출하며 회피 조건 변경은 캐시된 후보를 사용합니다.
 

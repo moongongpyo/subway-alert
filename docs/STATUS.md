@@ -1,6 +1,6 @@
 # 구현·배포 상태
 
-2026-09-18 기준. 키가 없는 상태의 구현 완료와 실제 외부 API 연결을 구분합니다.
+2026-09-18 기준. 실제 AI 연결과 교통 데이터 연결 상태를 구분합니다.
 
 ## 준비된 리소스
 
@@ -13,7 +13,10 @@
 - Daytona **Personal**의 private 샌드박스 2개 생성 완료:
   - `subway-alert-detector`: `8dbed64d-9e10-4bf2-ac4a-c0eca49fe1b7`
   - `subway-alert-verifier`: `74d9ed49-2df0-4509-8a02-55691fa067a2`
-- 키 대기 중 샌드박스 정지를 요청했습니다. 배포 스크립트가 기존 이름을 찾아 재시작하며 중복 생성하지 않습니다.
+- 두 샌드박스에 OpenAI 기반 worker 배포 완료. private preview + 에이전트 토큰으로 Railway WAS와 연결했습니다.
+- Daytona 대체 키 `subway-alert-deploy-retry`로 연결 성공 후 기존 `subway-alert-deploy` 키를 폐기했습니다.
+- OpenAI `subway-alert-agents` 키는 Responses 실행 권한으로 발급했으며 발급 시 7일 만료를 설정했습니다.
+- 현재 worker 실행 시간은 24시간으로 제한됩니다. 다음 시연 전에 필요하면 배포 스크립트를 재실행하세요.
 
 ## 검증된 코드
 
@@ -24,11 +27,17 @@
 - 실제 브라우저에서 검색 → 지하철 회피 → 버스 A 회피 → 버스 B → 대안 없음 → 회피 해제 흐름 확인.
 - 데스크톱/모바일 화면 확인. JS 문법 검사 및 브라우저 콘솔 오류 없음.
 
-## 키 연결 후 남은 단계
+## 실제 클라우드 연결 검증
 
-1. [KEYS.md](KEYS.md)의 TMAP / OpenAI / Daytona 키를 Git에서 제외된 `.env`에 입력. 서울시 관측도 연결하려면 서울시 키 추가.
-2. `scripts/deploy_daytona.py`로 두 샌드박스에 worker 업로드/실행 및 private preview 연결 정보 생성.
-3. `.deploy/railway.env`를 WAS 환경 변수에 반영하고 재배포.
-4. 실제 TMAP 응답과 실제 OpenAI 도구 호출, Daytona 외부 통신을 검증.
+- Railway WAS → Daytona planner A → OpenAI → Daytona verifier B → OpenAI 전체 요청 성공.
+- 합성 경로 최초 검색: `VERIFIED`, `route-1`; 지하철 구간 회피 후: `VERIFIED`, 버스 대안 `route-2`.
+- 두 에이전트 모두 `engine=openai`, `read_routes` / `check_avoidance` 도구 실행, A `PROPOSE` → B `APPROVED` 확인.
+- 인증정보는 Git에서 제외된 `.env`, `.deploy/` 및 해당 플랫폼의 서버 설정에만 저장했습니다.
 
-**현재 Daytona에 worker가 배포되어 WAS와 연결된 상태는 아닙니다.** 샌드박스 리소스와 배포 코드는 준비되었으며 API 키가 필요합니다. 실제 TMAP/OpenAI 요청 성공은 아직 검증하지 않았습니다. 키 없는 공개 앱은 합성 경로와 서버 규칙 검사로 동작합니다.
+## 남은 외부 데이터 연결
+
+1. [KEYS.md](KEYS.md)의 `TMAP_APP_KEY`를 Railway WAS 환경 변수에 입력하고 재배포.
+2. 실제 TMAP 응답으로 검색·회피 검증. 현재 경로 입력은 DEMO 합성 데이터이며 실제 교통 API 성공을 검증한 상태는 아닙니다.
+3. 서울시 보조 관측까지 사용하려면 `SEOUL_API_KEY` 추가. 핵심 경로 안내에는 선택 사항입니다.
+
+OpenAI / Daytona 키 발급 및 에이전트 연결은 완료되었습니다. 키가 만료되거나 샌드박스가 정지되면 재발급·재배포가 필요합니다.

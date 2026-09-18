@@ -19,13 +19,13 @@ for(const side of ['from','to']) $('#route-'+side).addEventListener('change',()=
 $('#route-provider').addEventListener('change',renderPlannerSettings);
 $('#route-form').addEventListener('submit',async event=>{
   event.preventDefault(); if(routeWorking) return;
-  routeWorking=true; routeSession=undefined; $('#route-results').replaceChildren(); renderPlannerSettings(); $('#route-result-status').textContent='경로 후보를 불러오고 있습니다…';
+  routeWorking=true; routeSession=undefined; $('#route-results').replaceChildren(); empty($('#route-blocks'),'새 검색의 회피 조건이 여기에 표시됩니다.'); $('#route-traces').replaceChildren(); renderPlannerSettings(); $('#route-result-status').textContent='경로 후보를 불러오고 있습니다…';
   try { routeSession=await api('/routes','POST',{from:placeFor('from'),to:placeFor('to'),provider:$('#route-provider').value}); routeExpired=false; renderJourneys(); await refresh(); }
   catch(e){ $('#route-result-status').textContent=e.message; }
   finally {routeWorking=false; renderJourneys(); renderPlannerSettings();}
 });
 async function updateAvoid(path,method,body){
-  if(routeWorking || routeSession?.busy || routeExpired) return;
+  if(!routeSession || routeWorking || routeSession.busy || routeExpired) return;
   routeWorking=true; renderJourneys();
   try { routeSession=await api('/routes/'+routeSession.id+path,method,body); renderJourneys(); }
   catch(e){toast(e.message);}

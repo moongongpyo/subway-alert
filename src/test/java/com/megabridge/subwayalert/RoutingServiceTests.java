@@ -22,7 +22,7 @@ class RoutingServiceTests {
             if(role.equals("detector")) return decision("PROPOSE",attempt==0?"invented":"route-1");
             return decision(attempt==0?"REVISE":"APPROVED","route-1");
         });
-        var service=new RoutingService(mock(TmapClient.class),gateway);
+        var service=new RoutingService(mock(TmapClient.class),gateway,mock(MockDisruptions.class));
         try {
             var created=service.create("owner",PLACES.get("강남"),PLACES.get("선릉"),"DEMO");
             var result=finish(service,created.id());
@@ -34,7 +34,7 @@ class RoutingServiceTests {
         var gateway=mock(AgentGateway.class); when(gateway.configured()).thenReturn(true);
         when(gateway.route(anyString(),any(),anyList(),nullable(RoutingService.Decision.class),anyInt())).thenAnswer(invocation->
                 decision(invocation.<String>getArgument(0).equals("detector")?"PROPOSE":"APPROVED","invented"));
-        var service=new RoutingService(mock(TmapClient.class),gateway);
+        var service=new RoutingService(mock(TmapClient.class),gateway,mock(MockDisruptions.class));
         try {
             var result=finish(service,service.create("owner",PLACES.get("강남"),PLACES.get("선릉"),"DEMO").id());
             assertEquals("VERIFY_PENDING",result.state()); assertEquals("",result.recommendedId());

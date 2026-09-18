@@ -30,7 +30,7 @@ class MetroNoticesTests {
         var client=new MetroNotices(json,store);ReflectionTestUtils.setField(client,"key","test-key");ReflectionTestUtils.setField(client,"base","http://127.0.0.1:"+server.getAddress().getPort());
         try {client.collect();assertEquals(1,client.snapshot().get("total"));assertEquals(false,client.snapshot().get("stale"));}
         finally {server.stop(0);}
-        when(store.reserveProviderCalls("SEOUL_NOTICE",1,800)).thenReturn(false);client.collect();
+        when(store.reserveProviderCalls("SEOUL_NOTICE",1,800)).thenReturn(false);ReflectionTestUtils.setField(client,"lastAttempt",Instant.EPOCH);client.collect();
         assertEquals(1,client.snapshot().get("total"));assertFalse(client.snapshot().get("error").toString().contains("test-key"));assertFalse(client.snapshot().get("error").toString().isBlank());
     }
     @Test void daytonaKeysAreNeverSentToSeoul() {

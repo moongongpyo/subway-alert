@@ -14,3 +14,5 @@ OpenAI 키는 Spring 서버에서만 사용합니다. Python worker, DETECTOR_UR
 `./gradlew test bootJar` 후 `/actuator/health`, `/api/routes` 검색과 회피 흐름을 검증합니다. 에이전트 도구는 Spring 프로세스에서 실행되고 OpenAI API만 외부 호출합니다.
 
 이전 샌드박스 배포 스크립트는 현재 배포에 실행하지 않습니다. 기존 샌드박스는 새 기능을 정할 때 재사용할 수 있습니다.
+
+장소 검색은 기존 `TMAP_APP_KEY`를 재사용하며 별도 키가 필요하지 않습니다. `/api/places?q=서울역`, `/mock.html`, `/api/metro-notices`를 배포 후 확인합니다. 목업 이벤트는 기존 PostgreSQL Store에 저장됩니다. 공지 즉시 수집은 `POST /api/metro-notices/refresh`이며 변경 요청에는 `X-Requested-With: SubwayAlert`가 필요합니다.

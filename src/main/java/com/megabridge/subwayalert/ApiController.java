@@ -23,9 +23,10 @@ public class ApiController {
     private final TmapClient tmap;
     private final RoutingService routing;
     private final MetroNotices metroNotices;
+    private final MockDisruptions mocks;
     @Value("${app.poll-ms}") private long pollMs;
-    public ApiController(Store store,Coordinator coordinator,SeoulClient seoul,AgentGateway agents,TmapClient tmap,RoutingService routing,MetroNotices metroNotices) {
-        this.store=store; this.coordinator=coordinator; this.seoul=seoul; this.agents=agents; this.tmap=tmap; this.routing=routing; this.metroNotices=metroNotices;
+    public ApiController(Store store,Coordinator coordinator,SeoulClient seoul,AgentGateway agents,TmapClient tmap,RoutingService routing,MetroNotices metroNotices,MockDisruptions mocks) {
+        this.store=store; this.coordinator=coordinator; this.seoul=seoul; this.agents=agents; this.tmap=tmap; this.routing=routing; this.metroNotices=metroNotices; this.mocks=mocks;
     }
     @GetMapping("/dashboard")
     public Map<String,Object> dashboard(HttpServletRequest request,HttpServletResponse response) {
@@ -54,10 +55,10 @@ public class ApiController {
                         "seoulNoticeConfigured",metroNotices.configured(),"tmapConfigured",tmap.configured(),
                         "tmapCallsToday",tmap.callsToday(),"tmapDailyBudget",tmap.budget()),"serverTime",Instant.now());
     }
-    public record RouteQuery(@NotNull TmapClient.Place from,@NotNull TmapClient.Place to,@NotBlank String provider) {}
+    public record RouteQuery(@NotNull TmapClient.Place from,@NotNull TmapClient.Place to,@NotBlank String provider,Boolean simulation) {}
     @PostMapping("/routes")
     public RoutingService.Snapshot routes(@Valid @RequestBody RouteQuery body,HttpServletRequest request,HttpServletResponse response) {
-        mutation(request); return routing.create(owner(request,response),body.from(),body.to(),body.provider());
+        mutation(request); return routing.create(owner(request,response),body.from(),body.to(),body.provider(),Boolean.TRUE.equals(body.simulation()));
     }
     @GetMapping("/routes/{id}")
     public RoutingService.Snapshot route(@PathVariable String id,HttpServletRequest request,HttpServletResponse response) { return routing.get(owner(request,response),id); }
@@ -70,6 +71,12 @@ public class ApiController {
     public RoutingService.Snapshot removeAvoid(@PathVariable String id,@PathVariable String blockId,HttpServletRequest request,HttpServletResponse response) {
         mutation(request); return routing.remove(owner(request,response),id,blockId);
     }
+    @GetMapping("/mock-disruptions") public Object mockList(){return mocks.list();}
+    public record MockBody(@NotBlank String sessionId,@NotBlank String legId,int startIndex,int endIndex,@NotNull Instant startsAt,@NotNull Instant endsAt) {}
+    @PostMapping("/mock-disruptions") public Object mockCreate(@Valid @RequestBody MockBody body,HttpServletRequest request,HttpServletResponse response){
+        mutation(request);var leg=routing.mockLeg(owner(request,response),body.sessionId(),body.legId(),body.startIndex(),body.endIndex());return mocks.create(leg,body.startsAt(),body.endsAt());
+    }
+    @DeleteMapping("/mock-disruptions/{id}") public Object mockDelete(@PathVariable String id,HttpServletRequest request){mutation(request);mocks.delete(id);return Map.of("ok",true);}
     public record Subscribe(@NotBlank String station,@NotBlank String direction) {}
     @PostMapping("/subscriptions")
     public Subscription subscribe(@Valid @RequestBody Subscribe body,HttpServletRequest request,HttpServletResponse response) {

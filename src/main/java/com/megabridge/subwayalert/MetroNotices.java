@@ -25,6 +25,7 @@ public class MetroNotices {
     }
     record Feed(List<Notice> notices,int total) {}
     private record Cache(Feed feed,Instant fetchedAt,String error) {}
+    private Instant lastAttempt=Instant.EPOCH;
     private volatile Cache cache=new Cache(new Feed(List.of(),0),null,"");
     private final JsonMapper json;
     private final Store store;
@@ -37,7 +38,8 @@ public class MetroNotices {
 
     @Scheduled(initialDelay=3000,fixedDelayString="${app.notice-poll-ms:120000}")
     public synchronized void collect() {
-        if(!configured()) return;
+        if(!configured() || lastAttempt.plusSeconds(15).isAfter(Instant.now())) return;
+        lastAttempt=Instant.now();
         try {
             if(!store.reserveProviderCalls("SEOUL_NOTICE",1,budget)) throw new IllegalStateException();
             String url=base.replaceAll("/+$","")+"/"+URLEncoder.encode(key,StandardCharsets.UTF_8)+"/json/getNtceList/1/1000/";
@@ -52,6 +54,11 @@ public class MetroNotices {
             var previous=cache;
             cache=new Cache(previous.feed,previous.fetchedAt,"공식 공지 수집 실패: 인증키·호출 한도·연결 상태를 확인하세요.");
         }
+    }
+    @PostMapping("/api/metro-notices/refresh")
+    public Map<String,Object> refresh(jakarta.servlet.http.HttpServletRequest request) {
+        if(!"SubwayAlert".equals(request.getHeader("X-Requested-With"))) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
+        collect();return snapshot();
     }
     @GetMapping("/api/metro-notices")
     public Map<String,Object> snapshot() {

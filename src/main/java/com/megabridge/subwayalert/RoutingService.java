@@ -19,6 +19,7 @@ public class RoutingService {
     private static final class Session {
         final String id=UUID.randomUUID().toString(),owner;
         final RoutePlan plan;
+        boolean simulation;
         final List<Block> blocks=new ArrayList<>();
         final List<Trace> traces=new ArrayList<>();
         List<Assessment> assessments=List.of();
@@ -29,11 +30,13 @@ public class RoutingService {
     }
     private final TmapClient tmap;
     private final AgentGateway agents;
+    private final MockDisruptions mocks;
     private final Map<String,Session> sessions=new ConcurrentHashMap<>();
     private final ThreadPoolExecutor executor=new ThreadPoolExecutor(2,2,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(8));
-    public RoutingService(TmapClient tmap,AgentGateway agents) { this.tmap=tmap; this.agents=agents; }
+    public RoutingService(TmapClient tmap,AgentGateway agents,MockDisruptions mocks) { this.tmap=tmap; this.agents=agents; this.mocks=mocks; }
     @PreDestroy void close() { executor.shutdownNow(); }
-    public synchronized Snapshot create(String owner,Place from,Place to,String provider) {
+    public Snapshot create(String owner,Place from,Place to,String provider) { return create(owner,from,to,provider,false); }
+    public synchronized Snapshot create(String owner,Place from,Place to,String provider,boolean simulation) {
         sessions.values().removeIf(s->!s.plan.fetchedAt().plusSeconds(300).isAfter(Instant.now()) && !s.busy);
         if(sessions.size()>=200) throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"잠시 후 다시 검색하세요.");
         if(from==null || to==null || (from.lon()==to.lon() && from.lat()==to.lat())) throw new IllegalArgumentException("서로 다른 출발지와 도착지를 선택하세요.");
@@ -41,9 +44,23 @@ public class RoutingService {
         long owned=sessions.values().stream().filter(s->s.owner.equals(owner)).count();
         if(owned>=10) throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"검색은 5분에 10회까지 가능합니다.");
         var session=new Session(owner,provider.equals("DEMO")?RouteDemo.create(from,to):tmap.routes(from,to));
-        sessions.put(session.id,session); evaluate(session); return session.snapshot();
+        session.simulation=simulation; sessions.put(session.id,session); syncMocks(session); evaluate(session); return session.snapshot();
     }
-    public Snapshot get(String owner,String id) { return find(owner,id).snapshot(); }
+    public Snapshot get(String owner,String id) { Session s=find(owner,id); synchronized(s) {if(!s.busy && syncMocks(s))evaluate(s);return s.snapshot();} }
+    private boolean syncMocks(Session s) {
+        if(!s.simulation)return false;
+        var active=mocks.blocks(Instant.now());
+        var previous=s.blocks.stream().filter(b->b.source().equals("MOCK")).map(Block::id).collect(java.util.stream.Collectors.toSet());
+        var next=active.stream().map(Block::id).collect(java.util.stream.Collectors.toSet());
+        if(previous.equals(next))return false;
+        s.blocks.removeIf(b->b.source().equals("MOCK"));s.blocks.addAll(active);return true;
+    }
+    public Leg mockLeg(String owner,String id,String legId,int start,int end) {
+        var s=find(owner,id);var leg=s.plan.journeys().stream().flatMap(j->j.legs().stream()).filter(l->l.id().equals(legId)).findFirst().orElseThrow(()->new IllegalArgumentException("경로 구간을 다시 선택하세요."));
+        if(!completeStops(leg)||start<0||end>=leg.stops().size()||start>=end)throw new IllegalArgumentException("시작·종료 정류장을 순서대로 선택하세요.");
+        var stops=List.copyOf(leg.stops().subList(start,end+1));
+        return new Leg(leg.id(),leg.mode(),leg.route(),leg.routeId(),leg.type(),stops.getFirst().name(),stops.getLast().name(),leg.durationSeconds(),leg.service(),stops);
+    }
     public Snapshot avoid(String owner,String id,String legId,String scope,String reason) {
         Session s=find(owner,id);
         synchronized(s) {
@@ -59,7 +76,7 @@ public class RoutingService {
     }
     public Snapshot remove(String owner,String id,String blockId) {
         Session s=find(owner,id);
-        synchronized(s) { available(s); s.blocks.removeIf(b->b.id().equals(blockId)); evaluate(s); return s.snapshot(); }
+        synchronized(s) { available(s); s.blocks.removeIf(b->b.id().equals(blockId)&&!b.source().equals("MOCK")); evaluate(s); return s.snapshot(); }
     }
     private Session find(String owner,String id) {
         Session s=sessions.get(id);

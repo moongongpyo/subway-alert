@@ -65,6 +65,8 @@ public class TmapClient {
             var response=http.send(request,HttpResponse.BodyHandlers.ofInputStream());
             byte[] bytes;
             try(var stream=response.body()) { bytes=stream.readNBytes(3_000_001); }
+            if(response.statusCode()==429) throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"TMAP 제공 한도를 초과했습니다. 앱 자체 제한이 아닌 TMAP 응답(429)입니다. SK Open API 콘솔에서 이용량·상품 한도·갱신 시각을 확인하세요.");
+            if(response.statusCode()==401 || response.statusCode()==403) throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,"TMAP 인증 또는 상품 접근이 거부됐습니다. SK Open API에서 앱 키와 대중교통 상품 이용권한을 확인하세요.");
             if(response.statusCode()!=200 || bytes.length>3_000_000) throw new IllegalStateException();
             var result=parse(json.readTree(bytes),from,to,Instant.now());
             if(cache.size()>=100) cache.remove(cache.keySet().iterator().next());
@@ -72,6 +74,8 @@ public class TmapClient {
             return result;
         } catch(InterruptedException e) {
             Thread.currentThread().interrupt(); throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,"TMAP 경로 조회가 중단되었습니다.");
+        } catch(ResponseStatusException e) {
+            throw e;
         } catch(Exception e) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,"TMAP 경로 조회 실패 · 인증키/상품 이용권한/응답 상태를 확인하세요.");
         }

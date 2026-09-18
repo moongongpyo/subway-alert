@@ -46,6 +46,16 @@ class TmapClientTests {
 
         } finally {server.stop(0);}
     }
+    @Test void providerQuotaIsNotMisreportedAsAuthenticationFailure() throws Exception {
+        var store=mock(Store.class);var client=new TmapClient(store,JsonMapper.builder().build());
+        var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
+        server.createContext("/routes",exchange->{byte[] body="{\"error\":{\"code\":\"QUOTA_EXCEEDED\"}}".getBytes(StandardCharsets.UTF_8);exchange.sendResponseHeaders(429,body.length);exchange.getResponseBody().write(body);exchange.close();});server.start();
+        try {
+            ReflectionTestUtils.setField(client,"key","test-key");ReflectionTestUtils.setField(client,"endpoint","http://127.0.0.1:"+server.getAddress().getPort()+"/routes");
+            var error=assertThrows(ResponseStatusException.class,()->client.routes(PLACES.get("강남"),PLACES.get("선릉")));
+            assertEquals(429,error.getStatusCode().value());assertTrue(error.getReason().contains("TMAP 제공 한도"));assertFalse(error.getReason().contains("인증키"));
+        } finally {server.stop(0);}
+    }
     @Test void missingKeyAndMalformedResponsesDoNotBecomeDemoRoutes() {
         var store=mock(Store.class); var json=JsonMapper.builder().build(); var client=new TmapClient(store,json);
         ReflectionTestUtils.setField(client,"key","");

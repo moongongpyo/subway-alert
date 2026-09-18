@@ -15,3 +15,4 @@ jobs:
       - run: node --check src/main/resources/static/app.js
       - run: node --check src/main/resources/static/places.js
       - run: node --check src/main/resources/static/mock.js
+      - run: node scripts/test-mock-ui.cjs

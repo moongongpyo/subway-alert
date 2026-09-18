@@ -55,10 +55,10 @@ public class ApiController {
                         "seoulNoticeConfigured",metroNotices.configured(),"tmapConfigured",tmap.configured(),
                         "tmapCallsToday",tmap.callsToday(),"tmapDailyBudget",tmap.budget()),"serverTime",Instant.now());
     }
-    public record RouteQuery(@NotNull TmapClient.Place from,@NotNull TmapClient.Place to,@NotBlank String provider,Boolean simulation) {}
+    public record RouteQuery(@NotNull TmapClient.Place from,@NotNull TmapClient.Place to,@NotBlank String provider,Boolean simulation,String searchDttm) {}
     @PostMapping("/routes")
     public RoutingService.Snapshot routes(@Valid @RequestBody RouteQuery body,HttpServletRequest request,HttpServletResponse response) {
-        mutation(request); return routing.create(owner(request,response),body.from(),body.to(),body.provider(),Boolean.TRUE.equals(body.simulation()));
+        mutation(request); return routing.create(owner(request,response),body.from(),body.to(),body.provider(),Boolean.TRUE.equals(body.simulation()),body.searchDttm());
     }
     @GetMapping("/routes/{id}")
     public RoutingService.Snapshot route(@PathVariable String id,HttpServletRequest request,HttpServletResponse response) { return routing.get(owner(request,response),id); }

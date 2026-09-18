@@ -38,16 +38,28 @@ public class TmapClient {
     public boolean configured() { return !key.isBlank(); }
     public int budget() { return budget; }
     public int callsToday() { return store.providerCallsToday("TMAP"); }
-    public synchronized RoutePlan routes(Place from,Place to) {
+    public RoutePlan routes(Place from,Place to) { return routes(from,to,null); }
+    static String validateDeparture(String value) {
+        if(value==null||value.isBlank())return "";
+        try {
+            if(!value.matches("[0-9]{12}"))throw new IllegalArgumentException();
+            var dt=LocalDateTime.parse(value,java.time.format.DateTimeFormatter.ofPattern("uuuuMMddHHmm").withResolverStyle(java.time.format.ResolverStyle.STRICT));
+            if(dt.getYear()<1900)throw new IllegalArgumentException();
+            return value;
+        }catch(RuntimeException e){throw new IllegalArgumentException("출발 시간을 한국 시간 기준의 올바른 날짜와 시각으로 설정하세요.");}
+    }
+    public synchronized RoutePlan routes(Place from,Place to,String departure) {
+        String searchDttm=validateDeparture(departure);
         if(from==null || to==null || (from.lon()==to.lon() && from.lat()==to.lat())) throw new IllegalArgumentException("서로 다른 출발지와 도착지를 선택하세요.");
         if(!configured()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"TMAP_APP_KEY 설정이 필요합니다.");
         Instant now=Instant.now();
         cache.entrySet().removeIf(entry->!entry.getValue().fetchedAt().plusSeconds(300).isAfter(now));
-        String cacheKey=from.toString()+":"+to.toString();
+        String cacheKey=from.toString()+":"+to.toString()+":"+searchDttm;
         RoutePlan saved=cache.get(cacheKey);
         if(saved!=null) return new RoutePlan(saved.provider(),from,to,saved.fetchedAt(),true,saved.journeys(),NOTE);
         if(!store.reserveProviderCalls("TMAP",1,budget)) throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"오늘의 TMAP 조회 예산을 사용했습니다.");
-        Map<String,Object> body=Map.of("startX",String.valueOf(from.lon()),"startY",String.valueOf(from.lat()),"endX",String.valueOf(to.lon()),"endY",String.valueOf(to.lat()),"count",10,"lang",0,"format","json");
+        Map<String,Object> body=new LinkedHashMap<>(Map.of("startX",String.valueOf(from.lon()),"startY",String.valueOf(from.lat()),"endX",String.valueOf(to.lon()),"endY",String.valueOf(to.lat()),"count",10,"lang",0,"format","json"));
+        if(!searchDttm.isEmpty())body.put("searchDttm",searchDttm);
         try {
             var request=HttpRequest.newBuilder(URI.create(endpoint)).timeout(Duration.ofSeconds(12))
                     .header("appKey",key).header("accept","application/json").header("content-type","application/json")

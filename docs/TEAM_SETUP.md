@@ -28,3 +28,7 @@
 - OPENAI_MODEL 기본값: gpt-4.1-mini
 
 Daytona, AGENT_TOKEN, APP_ADMIN_TOKEN, DETECTOR/VERIFIER URL과 preview token은 필요 없습니다. SEOUL_API_KEY는 구형 위치·도착 관측 기능을 별도로 활성화할 때만 필요하며 현재 공지 키와 혼용하지 않습니다. 팀원이 같은 API 키를 쓰면 공급자 사용량도 공유됩니다.
+
+## 출발 시간 지정
+
+메인과 장애 구간 검색에서 한국 시간 기준 출발 날짜·시간을 지정할 수 있습니다. 비워두면 현재 시각입니다. TMAP의 searchDttm(yyyyMMddHHmm)으로 전달하며 서로 다른 시각의 검색 결과는 캐시도 분리합니다. 선택 시각은 운행 시간표 확인에 사용하며 실시간 운행을 보장하지 않습니다. 목업 장애 예약 시작/종료는 별도의 실제 현재 시각 기준이며 출발시간 선택으로 이동하지 않습니다.

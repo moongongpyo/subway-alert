@@ -5,9 +5,9 @@ async function scenario(status,changed=false){
  const get=id=>{if(!nodes.has(id))nodes.set(id,node());return nodes.get(id);};
  const leg={id:'old-leg',mode:'BUS',route:'10',routeId:'bus-10',start:'A',end:'C',stops:[{id:'1',name:'A'},{id:'2',name:'B'},{id:'3',name:'C'}]};
  const fresh={...leg,id:'new-leg',route:changed?'20':'10'};let routeCalls=0,saveCalls=0,saved;
- const context={console,Date,Intl,JSON,Number,Error,Set,setInterval(){},sessionStorage:{setItem(){}},location:{},document:{querySelector:get,createElement:node},PlacePicker:class{get(){return {name:'test',lon:127,lat:37};}},fetch:async(path,opts)=>{
+ const context={console,Date,Intl,JSON,Number,Error,Set,setInterval(){},sessionStorage:{setItem(){}},location:{},document:{querySelector:get,createElement:node},DeparturePicker:class{get(){return "202609191200";}},PlacePicker:class{get(){return {name:'test',lon:127,lat:37};}},fetch:async(path,opts)=>{
   let body={};let code=200;
-  if(path==='/api/routes'){routeCalls++;body={id:routeCalls===1?'old-session':'new-session',plan:{journeys:[{legs:[routeCalls===1?leg:fresh]}]}};}
+  if(path==='/api/routes'){assert.equal(JSON.parse(opts.body).searchDttm,'202609191200');routeCalls++;body={id:routeCalls===1?'old-session':'new-session',plan:{journeys:[{legs:[routeCalls===1?leg:fresh]}]}};}
   else if(path==='/api/mock-disruptions'&&opts.method==='POST'){saveCalls++;if(saveCalls===1){code=status;body={message:'old search missing'};}else{saved=JSON.parse(opts.body);body={id:'event'};}}
   else if(path==='/api/mock-disruptions')body=[];
   else body={configured:true,items:[],total:0};

@@ -33,7 +33,7 @@ Java 21이 필요합니다. Windows 스크립트는 IntelliJ의 사용자 `.jdks
 - 상태: http://localhost:8080/actuator/health
 - 기본 모드: DEMO. 키 없이 규칙 기반 합성 데이터 시연 가능.
 - 로컬 DB: `data/subway.mv.db`. 서버를 종료한 뒤 파일을 백업합니다.
-- 로컬 직접 접속에서는 관리자 토큰 없이 시연할 수 있습니다. 외부 배포는 `APP_ADMIN_TOKEN`이 필요합니다.
+- 해커톤 운영 제어는 사용자 승인에 따라 토큰 없이 공개됩니다. 공개 URL의 누구나 서버 전체 모드 변경·수집·장애 시연을 실행할 수 있습니다.
 - `.env`는 Python 배포 스크립트가 읽습니다. Spring은 OS 환경 변수 또는 `--KEY=value` Spring 설정으로 주입합니다.
 
 ## 클라우드 배치

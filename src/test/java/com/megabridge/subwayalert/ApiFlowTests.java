@@ -27,7 +27,7 @@ class ApiFlowTests {
     }
     private JsonNode dashboard(HttpClient c) throws Exception { var res=send(c,"/dashboard","GET",null,null); assertEquals(200,res.statusCode(),res.body()); return json.readTree(res.body()); }
     private JsonNode scenario(HttpClient c,String scenario,String requestId) throws Exception {
-        var result=send(c,"/admin/scenarios","POST",Map.of("scenario",scenario,"station","역삼","direction","내선","requestId",requestId),"test-admin");
+        var result=send(c,"/admin/scenarios","POST",Map.of("scenario",scenario,"station","역삼","direction","내선","requestId",requestId),null);
         assertEquals(202,result.statusCode(),result.body());
         for(int i=0;i<100;i++) { var d=dashboard(c); if(!d.path("busy").asBoolean()) return d; Thread.sleep(30); }
         fail("Scenario did not complete"); return null;
@@ -38,8 +38,10 @@ class ApiFlowTests {
         assertEquals(200,sub.statusCode()); String subId=json.readTree(sub.body()).path("id").asText();
         send(bob,"/subscriptions/"+subId,"DELETE",null,null);
         assertEquals(1,dashboard(alice).path("subscriptions").size());
-        var blocked=send(alice,"/admin/scenarios","POST",Map.of("scenario","DELAY","station","역삼","direction","내선","requestId",UUID.randomUUID().toString()),"wrong");
-        assertEquals(401,blocked.statusCode());
+        assertEquals(200,send(alice,"/admin/mode","POST",Map.of("mode","DEMO"),null).statusCode());
+        var noHeader=HttpRequest.newBuilder(URI.create("http://localhost:"+port+"/api/admin/mode")).header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString("{\"mode\":\"DEMO\"}")).build();
+        assertEquals(403,alice.send(noHeader,HttpResponse.BodyHandlers.ofString()).statusCode());
+        assertFalse(dashboard(alice).path("settings").path("seoulNoticeConfigured").asBoolean());
         for(String failure:List.of("STALE","FAILURE","TIMEOUT","INVALID_RESPONSE")) {
             var d=scenario(alice,failure,UUID.randomUUID().toString()); assertTrue(d.path("notifications").isEmpty(),failure);
         }

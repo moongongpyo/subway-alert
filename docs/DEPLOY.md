@@ -45,7 +45,7 @@ APP_MODE=DEMO
 
 4. `.deploy/railway.env`의 값들을 함께 추가합니다. OpenAI 키는 WAS에 필요 없습니다.
 5. Deploy 후 `/actuator/health`가 UP인지 확인하고 Settings → Networking에서 도메인을 생성합니다.
-6. 앱의 `연결 및 시연`에서 관리자 토큰을 입력하고 DEMO 흐름을 검증합니다. 모든 키를 연결한 뒤 실시간 모드로 전환합니다.
+6. 앱의 `연결 및 시연`에서 토큰 없이 DEMO 흐름을 검증합니다. 운영 제어는 공개이며 서버 전체에 적용됩니다. 위치·도착 키가 연결된 경우에만 해당 관측을 LIVE로 전환할 수 있습니다. 공식 공지는 이 모드와 독립적으로 수집합니다.
 
 `PORT`는 Railway가 제공합니다. PostgreSQL은 내부 호스트로 연결합니다. H2를 Railway 임시 파일시스템에 두면 재배포 시 데이터가 없어지므로 PostgreSQL 연결 후 운영합니다. H2를 별도로 쓰려면 영속 볼륨을 붙여 `JDBC_DATABASE_URL=jdbc:h2:file:/data/subway`를 명시해야 합니다.
 

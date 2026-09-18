@@ -22,10 +22,10 @@ public class ApiController {
     private final AgentGateway agents;
     private final TmapClient tmap;
     private final RoutingService routing;
-    @Value("${app.admin-token}") private String adminToken;
+    private final MetroNotices metroNotices;
     @Value("${app.poll-ms}") private long pollMs;
-    public ApiController(Store store,Coordinator coordinator,SeoulClient seoul,AgentGateway agents,TmapClient tmap,RoutingService routing) {
-        this.store=store; this.coordinator=coordinator; this.seoul=seoul; this.agents=agents; this.tmap=tmap; this.routing=routing;
+    public ApiController(Store store,Coordinator coordinator,SeoulClient seoul,AgentGateway agents,TmapClient tmap,RoutingService routing,MetroNotices metroNotices) {
+        this.store=store; this.coordinator=coordinator; this.seoul=seoul; this.agents=agents; this.tmap=tmap; this.routing=routing; this.metroNotices=metroNotices;
     }
     @GetMapping("/dashboard")
     public Map<String,Object> dashboard(HttpServletRequest request,HttpServletResponse response) {
@@ -51,7 +51,7 @@ public class ApiController {
                 "notifications",store.list("notice",owner,50,Notice.class),"settings",Map.of(
                         "seoulConfigured",seoul.configured(),"agentsConfigured",agents.configured(),"callsToday",store.callsToday(),
                         "dailyBudget",seoul.budget(),"pollIntervalMs",pollMs,"freshSeconds",coordinator.freshness(),
-                        "adminTokenRequired",!adminToken.isBlank(),"tmapConfigured",tmap.configured(),
+                        "seoulNoticeConfigured",metroNotices.configured(),"tmapConfigured",tmap.configured(),
                         "tmapCallsToday",tmap.callsToday(),"tmapDailyBudget",tmap.budget()),"serverTime",Instant.now());
     }
     public record RouteQuery(@NotNull TmapClient.Place from,@NotNull TmapClient.Place to,@NotBlank String provider) {}
@@ -96,32 +96,22 @@ public class ApiController {
     @PostMapping("/admin/scenarios")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public Run scenario(@Valid @RequestBody ScenarioBody body,HttpServletRequest request) {
-        admin(request); return coordinator.start(body.scenario(),body.station(),body.direction(),body.requestId());
+        mutation(request); return coordinator.start(body.scenario(),body.station(),body.direction(),body.requestId());
     }
     public record ModeBody(@NotNull Mode mode) {}
     @PostMapping("/admin/mode")
     public Map<String,Mode> mode(@Valid @RequestBody ModeBody body,HttpServletRequest request) {
-        admin(request); coordinator.setMode(body.mode()); return Map.of("mode",coordinator.mode());
+        mutation(request); coordinator.setMode(body.mode()); return Map.of("mode",coordinator.mode());
     }
     @PostMapping("/admin/collect")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public Run collect(HttpServletRequest request) {
-        admin(request);
+        mutation(request);
         if(coordinator.mode()!=Mode.LIVE) throw new IllegalArgumentException("실시간 모드에서만 수집할 수 있습니다.");
         return coordinator.start(null,null,null,UUID.randomUUID().toString());
     }
     private static void mutation(HttpServletRequest request) {
         if(!"SubwayAlert".equals(request.getHeader("X-Requested-With"))) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"요청 헤더가 필요합니다.");
-    }
-    private void admin(HttpServletRequest request) {
-        mutation(request);
-        String supplied=Optional.ofNullable(request.getHeader("X-Admin-Token")).orElse("");
-        if(!adminToken.isBlank()) {
-            if(!MessageDigest.isEqual(adminToken.getBytes(StandardCharsets.UTF_8),supplied.getBytes(StandardCharsets.UTF_8))) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"관리자 토큰을 확인하세요.");
-        } else if(!Set.of("127.0.0.1","::1","0:0:0:0:0:0:0:1").contains(request.getRemoteAddr())
-                || request.getHeader("Forwarded")!=null || request.getHeader("X-Forwarded-For")!=null) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"외부 접속에는 APP_ADMIN_TOKEN 설정이 필요합니다.");
-        }
     }
     private static String owner(HttpServletRequest request,HttpServletResponse response) {
         String token=null;

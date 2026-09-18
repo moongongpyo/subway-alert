@@ -16,10 +16,9 @@ async function api(path, method = 'GET', body) {
   try {
     const headers = {'X-Requested-With':'SubwayAlert'};
     if(body !== undefined) headers['Content-Type'] = 'application/json';
-    if(path.startsWith('/admin/')) headers['X-Admin-Token'] = $('#admin-token').value;
     const response = await fetch('/api' + path, {method, headers, credentials:'same-origin', body:body === undefined ? undefined : JSON.stringify(body), signal:controller.signal});
     let result = {}; try { result = await response.json(); } catch { /* unexpected response handled below */ }
-    if(!response.ok) throw new Error(result.message || (response.status === 401 ? '관리자 토큰을 확인하세요.' : `요청을 처리하지 못했어요 (${response.status}).`));
+    if(!response.ok) throw new Error(result.message || (`요청을 처리하지 못했어요 (${response.status}).`));
     return result;
   } finally { clearTimeout(timer); }
 }
@@ -98,7 +97,7 @@ function render() {
   $('#engine-status').textContent = !data.settings.agentsConfigured ? '로컬 규칙 기반 시뮬레이션' : data.jobs[0]?.engine === 'openai' ? 'OpenAI 도구 호출 연결' : '샌드박스 연결 · 실행 기록 확인';
   const unread = data.notifications.filter(n => !n.read).length; $('#unread-count').textContent = unread; $('#nav-count').textContent = unread;
   const status = $('#settings-status'); status.replaceChildren();
-  for(const [title,ready,description] of [['TMAP 경로 API',data.settings.tmapConfigured,`오늘 ${data.settings.tmapCallsToday} / ${data.settings.tmapDailyBudget}회`],['서울시 위치·도착 API',data.settings.seoulConfigured,'보조 관측용'],['Daytona 에이전트 A · B',data.settings.agentsConfigured,'연결 주소 설정'],['관측 데이터 모드',true,demo ? 'DEMO · 합성 데이터' : 'LIVE · 실제 데이터']]) { const row = el('div','setting-row'); row.append(el('strong','',title),el('span',ready?'ready':'',ready?description:'설정 필요')); status.append(row); }
+  for(const [title,ready,description] of [['TMAP 경로 API',data.settings.tmapConfigured,`오늘 ${data.settings.tmapCallsToday} / ${data.settings.tmapDailyBudget}회`],['서울교통공사 공식 공지 API',data.settings.seoulNoticeConfigured,'키 연결됨 · 공지 자동 수집'],['서울시 위치·도착 API (선택)',true,data.settings.seoulConfigured ? '키 연결됨 · 보조 관측용' : '미연결 · 공식 공지와 별도'],['Daytona 에이전트 A · B',data.settings.agentsConfigured,'연결 주소 설정'],['관측 데이터 모드',true,demo ? 'DEMO · 합성 데이터' : 'LIVE · 실제 데이터']]) { const row = el('div','setting-row'); row.append(el('strong','',title),el('span',ready?'ready':'',ready?description:'설정 필요')); status.append(row); }
   $('#quota-text').textContent = `${data.settings.callsToday} / ${data.settings.dailyBudget}`; $('#quota-progress').max = data.settings.dailyBudget; $('#quota-progress').value = data.settings.callsToday;
   $$('[data-scenario]').forEach(button => button.disabled = data.busy || !demo);
   $('#set-demo').disabled = data.busy || demo; $('#set-live').disabled = data.busy || !demo || !data.settings.seoulConfigured || !data.settings.agentsConfigured; $('#collect-now').disabled = data.busy || demo;

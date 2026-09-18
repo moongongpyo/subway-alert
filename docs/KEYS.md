@@ -15,7 +15,7 @@ OpenAI 키는 Railway Spring 서버로 이전했습니다. Daytona 키와 previe
 
 2026-09-18 현재 OpenAI / Daytona 키 발급과 실제 AI 연결은 완료했습니다. TMAP 키도 로컬 및 Railway에 등록했습니다. 서울시 보조 관측을 사용할 때만 `SEOUL_API_KEY`도 준비합니다. OpenAI 키는 발급 시 7일 만료로 설정했으므로 만료 후 교체해야 합니다.
 
-TMAP은 [이용약관](https://transit.tmapmobility.com/terms)의 무료 경로탐색 10회/일 기준으로 `TMAP_DAILY_BUDGET=10`을 기본 설정했습니다. 실제 발급 상품의 할당량을 확인하세요. 자동 주기 조회 없이 사용자 검색 때만 호출하며 회피 조건 변경은 캐시된 후보를 사용합니다.
+TMAP 경로·장소 검색에 앱 자체 일일 제한은 없습니다. 실제 공급자 한도는 가입 상품에 따릅니다. 동일 검색 캐시와 회피 조건 변경 시 후보 재사용은 유지합니다.
 
 - OpenAI API는 [API 결제](https://platform.openai.com/settings/organization/billing/overview)가 별도입니다. ChatGPT 구독과 별개입니다. 기본 모델은 `gpt-4.1-mini`, `OPENAI_MODEL`로 바꿀 수 있습니다.
 - 서울시 데이터: [실시간 도착정보](https://data.seoul.go.kr/dataList/OA-12764/A/1/datasetView.do), [열차 위치정보](https://data.seoul.go.kr/dataList/OA-12601/A/1/datasetView.do). 샘플 키는 제한된 대상 검증용이며 강남·역삼·선릉 운영 키를 대체하지 않습니다.

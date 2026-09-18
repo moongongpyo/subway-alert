@@ -4,7 +4,7 @@ Railway `subway-alert`는 GitHub main 변경을 자동 배포합니다.
 
 서버 환경 변수:
 - `OPENAI_API_KEY`, `OPENAI_MODEL=gpt-4.1-mini`
-- `TMAP_APP_KEY`, `TMAP_DAILY_BUDGET=10`
+- `TMAP_APP_KEY`
 - `SEOUL_NOTICE_API_KEY`: 공식 공지
 - `SEOUL_API_KEY`: 선택적인 위치·도착 관측
 - `JDBC_DATABASE_URL`, `DB_USERNAME`, `DB_PASSWORD`: 기존 Railway PostgreSQL 참조

@@ -39,7 +39,6 @@ app:
   seoul-daily-budget: ${SEOUL_DAILY_BUDGET:900}
   tmap-key: ${TMAP_APP_KEY:}
   tmap-url: ${TMAP_API_URL:https://apis.openapi.sk.com/transit/routes}
-  tmap-daily-budget: ${TMAP_DAILY_BUDGET:10}
   fresh-seconds: ${FRESH_SECONDS:180}
   demo-seed: ${DEMO_SEED:true}
 

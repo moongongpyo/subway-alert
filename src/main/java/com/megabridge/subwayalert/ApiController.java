@@ -53,7 +53,7 @@ public class ApiController {
                         "seoulConfigured",seoul.configured(),"agentsConfigured",agents.configured(),"callsToday",store.callsToday(),
                         "dailyBudget",seoul.budget(),"pollIntervalMs",pollMs,"freshSeconds",coordinator.freshness(),
                         "seoulNoticeConfigured",metroNotices.configured(),"tmapConfigured",tmap.configured(),
-                        "tmapCallsToday",tmap.callsToday(),"tmapDailyBudget",tmap.budget()),"serverTime",Instant.now());
+                        "tmapCallsToday",tmap.callsToday()),"serverTime",Instant.now());
     }
     public record RouteQuery(@NotNull TmapClient.Place from,@NotNull TmapClient.Place to,@NotBlank String provider,Boolean simulation,String searchDttm) {}
     @PostMapping("/routes")

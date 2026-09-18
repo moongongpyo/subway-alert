@@ -33,10 +33,8 @@ public class TmapClient {
     private final Map<String,RoutePlan> cache=new LinkedHashMap<>();
     @Value("${app.tmap-key}") private String key;
     @Value("${app.tmap-url}") private String endpoint;
-    @Value("${app.tmap-daily-budget}") private int budget;
     public TmapClient(Store store,JsonMapper json) { this.store=store; this.json=json; }
     public boolean configured() { return !key.isBlank(); }
-    public int budget() { return budget; }
     public int callsToday() { return store.providerCallsToday("TMAP"); }
     public RoutePlan routes(Place from,Place to) { return routes(from,to,null); }
     static String validateDeparture(String value) {
@@ -57,7 +55,7 @@ public class TmapClient {
         String cacheKey=from.toString()+":"+to.toString()+":"+searchDttm;
         RoutePlan saved=cache.get(cacheKey);
         if(saved!=null) return new RoutePlan(saved.provider(),from,to,saved.fetchedAt(),true,saved.journeys(),NOTE);
-        if(!store.reserveProviderCalls("TMAP",1,budget)) throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"오늘의 TMAP 조회 예산을 사용했습니다.");
+        store.recordProviderCall("TMAP");
         Map<String,Object> body=new LinkedHashMap<>(Map.of("startX",String.valueOf(from.lon()),"startY",String.valueOf(from.lat()),"endX",String.valueOf(to.lon()),"endY",String.valueOf(to.lat()),"count",10,"lang",0,"format","json"));
         if(!searchDttm.isEmpty())body.put("searchDttm",searchDttm);
         try {

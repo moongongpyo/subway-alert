@@ -32,7 +32,6 @@ info:
     description: Local coordinator for subway delay detection and verification agents
 
 app:
-  admin-token: ${APP_ADMIN_TOKEN:}
   mode: ${APP_MODE:DEMO}
   poll-ms: ${POLL_INTERVAL_MS:120000}
   seoul-key: ${SEOUL_API_KEY:}

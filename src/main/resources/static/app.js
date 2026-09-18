@@ -126,3 +126,24 @@ $('#collect-now').addEventListener('click',async() => { try { const run = await 
 $$('[data-scenario]').forEach(button => button.addEventListener('click',async() => { button.disabled = true; try { station = $('#demo-station').value; direction = $('#demo-direction').value; const run = await api('/admin/scenarios','POST',{scenario:button.dataset.scenario,station,direction,requestId:crypto.randomUUID()}); watchedRun = run.id; $('#scenario-result').textContent = '시연 진행 중 · 탐지와 검증 기록을 저장하고 있습니다.'; await refresh(); } catch(e) { toast(e.message); } finally { if(data) button.disabled = data.busy || data.mode !== 'DEMO'; } }));
 $('#enable-notifications').addEventListener('click',async() => { if(!('Notification' in window)) return toast('이 브라우저는 알림을 지원하지 않습니다. 웹 알림 목록을 이용해 주세요.'); const permission = await Notification.requestPermission(); toast(permission === 'granted' ? '페이지가 열려 있는 동안 새 알림을 받을 수 있어요.' : '브라우저 알림이 허용되지 않았어요. 웹 알림은 계속 표시됩니다.'); });
 async function loop() { await refresh(); setTimeout(loop,5000); } loop();
+
+async function refreshMetroNotices() {
+  try {
+    const feed = await api('/metro-notices');
+    const stamp = value => value ? new Date(value).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}) : '미제공';
+    const labels = {ENDED:'종료 시각 경과',SCHEDULED:'예정',TIME_WINDOW:'공지 기간 내 · 운행 상태 확인 필요',UNKNOWN:'현재 상태 확인 필요'};
+    $$('.metro-notices-status').forEach(node => node.textContent = !feed.configured ? '서울시 공지 API 인증키 연결 대기' : feed.error || (feed.stale ? '최신 공지를 확인하지 못했습니다. 아래는 마지막 수집 자료입니다.' : `${feed.source} · 수집 ${stamp(feed.fetchedAt)} · 최신 공지 최대 20건 표시`));
+    $$('.metro-notices-list').forEach(list => {
+      list.replaceChildren();
+      if(!feed.items.length) return empty(list,feed.configured ? '표시할 수집 공지가 없습니다. 장애가 없다는 뜻은 아닙니다.' : '서울 열린데이터광장 인증키를 연결하면 공지를 수집합니다.');
+      feed.items.slice(0,20).forEach(({notice:n,timing}) => {
+        const detail=el('details','metro-notice'), summary=el('summary','',`${labels[timing]} · ${n.title}`);
+        detail.append(summary,el('p','',`${n.lines || '노선 미제공'} · 발표 ${stamp(n.publishedAt)}`),el('p','notice-content',n.content),el('p','footnote',`시작 ${stamp(n.startsAt)} / 종료 ${stamp(n.endsAt)} · ${n.direction || '방향 미제공'}`));
+        list.append(detail);
+      });
+      if(feed.items.length>20 || feed.truncated) list.append(el('p','footnote','일부 공지만 표시하고 있습니다. 전체 공지는 출처에서 확인하세요.'));
+    });
+  } catch(e) { $$('.metro-notices-status').forEach(node=>node.textContent='공지를 새로 확인하지 못했습니다. 표시 내용은 이전 수집 자료입니다.'); }
+  setTimeout(refreshMetroNotices,60000);
+}
+refreshMetroNotices();

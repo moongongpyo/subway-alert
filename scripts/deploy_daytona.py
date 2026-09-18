@@ -40,7 +40,7 @@ def deploy(args):
     # A list failure is fatal, never interpreted as permission to create duplicates.
     existing = {s.name: s for s in client.list() if s.name in NAMES.values()}
     state = json.loads(STATE.read_text()) if STATE.exists() else {}
-    server_env = {"APP_MODE": "DEMO", "AGENT_TOKEN": secrets["AGENT_TOKEN"], "APP_ADMIN_TOKEN": secrets["APP_ADMIN_TOKEN"], "SEOUL_API_KEY": os.getenv("SEOUL_API_KEY", ""), "TMAP_APP_KEY": os.getenv("TMAP_APP_KEY", "")}
+    server_env = {"APP_MODE": "DEMO", "AGENT_TOKEN": secrets["AGENT_TOKEN"], "APP_ADMIN_TOKEN": secrets["APP_ADMIN_TOKEN"], "SEOUL_API_KEY": os.getenv("SEOUL_API_KEY", ""), "SEOUL_NOTICE_API_KEY": os.getenv("SEOUL_NOTICE_API_KEY", ""), "TMAP_APP_KEY": os.getenv("TMAP_APP_KEY", "")}
     for role, name in NAMES.items():
         sandbox = existing.get(name)
         if args.stop:

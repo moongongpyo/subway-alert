@@ -33,7 +33,8 @@
         </form>
         <div class="planner-layout"><div>
           <div id="route-result-status" class="info-note" role="status">출발지와 도착지를 검색한 뒤 경로의 버스·지하철 구간을 선택하세요.</div>
-          <div id="route-results" class="journey-list"><div class="route-empty"><span>↗</span><h2>상황이 바뀌어도, 다음 길을 찾도록.</h2><p>01 경로 검색 &nbsp; → &nbsp; 02 이용 불가 구간 선택 &nbsp; → &nbsp; 03 대안 확인</p><small>사고 여부를 확정하지 않아도 입력한 회피 조건으로 경로를 비교합니다.</small></div></div>
+          <section class="panel metro-notices-panel"><div class="panel-heading"><div><p class="eyebrow">OFFICIAL TRANSIT NOTICES</p><h2>서울교통공사 공식 공지</h2></div><a class="text-link" href="https://data.seoul.go.kr/dataList/OA-22718/A/1/datasetView.do" target="_blank" rel="noopener">출처 ↗</a></div><p class="metro-notices-status muted">공지를 확인하고 있습니다.</p><div class="metro-notices-list"></div><p class="footnote">지하철 공지이며 버스 장애는 포함하지 않습니다. 종료 시각이 없는 공지는 현재 장애로 확정하지 않습니다. 원문에서 구간을 확인한 뒤 경로의 ‘구간 피하기’를 선택하세요.</p></section>
+        <div id="route-results" class="journey-list"><div class="route-empty"><span>↗</span><h2>상황이 바뀌어도, 다음 길을 찾도록.</h2><p>01 경로 검색 &nbsp; → &nbsp; 02 이용 불가 구간 선택 &nbsp; → &nbsp; 03 대안 확인</p><small>사고 여부를 확정하지 않아도 입력한 회피 조건으로 경로를 비교합니다.</small></div></div>
         </div><aside class="planner-aside">
           <section class="panel"><p class="eyebrow">AVOID & REPLAN</p><h2>피하고 싶은 구간</h2><label>회피 범위<select id="avoid-scope"><option value="SEGMENT">선택한 승차 구간 · 양방향</option><option value="LINE">선택한 노선 전체</option></select></label><label>사유<select id="avoid-reason"><option>이용 불가</option><option>운행 중단</option><option>지연 우려</option><option>공사·통제</option><option>개인 선택</option></select></label><p class="footnote">각 경로의 ‘이 구간 피하기’를 누르세요. 입력은 내 검색에만 적용되며 공식 장애 제보로 게시되지 않습니다.</p><div id="route-blocks"><div class="empty">아직 회피 조건이 없어요.</div></div></section>
           <section class="panel"><p class="eyebrow">TWO AGENTS, ONE CHECK</p><h2>대안을 함께 검토합니다</h2><div class="route-agent-step"><b>A</b><div><strong>경로 계획</strong><p>후보 비교 · 회피 조건 적용</p></div></div><div class="route-agent-step"><b>B</b><div><strong>독립 검증</strong><p>구간 재검사 · 오류 시 수정 요청</p></div></div><div id="route-traces" class="route-traces"><p class="footnote">AI 연결 전에는 서버의 구간 검사 결과를 표시합니다.</p></div></section>
@@ -43,6 +44,7 @@
       <section id="page-overview" class="page">
         <div class="heading"><div><p class="eyebrow">YOUR DAILY COMMUTE, WITH CONFIDENCE</p><h1>오늘의 이동을, 안심하게.</h1><p class="muted">작은 지연 징후도 두 에이전트가 함께 살펴봅니다.</p></div><button class="button primary" id="add-subscription">＋ 관심 구간 등록</button></div>
         <div class="mode-banner"><span id="mode-badge" class="badge">SIMULATION</span><p id="mode-description">시연 데이터를 불러오고 있습니다.</p><a href="#settings">설정 확인 ↗</a></div>
+        <section class="panel metro-notices-panel"><div class="panel-heading"><div><p class="eyebrow">OFFICIAL TRANSIT NOTICES</p><h2>서울교통공사 공식 공지</h2></div><a class="text-link" href="https://data.seoul.go.kr/dataList/OA-22718/A/1/datasetView.do" target="_blank" rel="noopener">출처 ↗</a></div><p class="metro-notices-status muted">공지를 확인하고 있습니다.</p><div class="metro-notices-list"></div><p class="footnote">지하철 공지이며 버스 장애는 포함하지 않습니다. 종료 시각이 없는 공지는 현재 장애로 확정하지 않습니다. 원문에서 구간을 확인한 뒤 경로의 ‘구간 피하기’를 선택하세요.</p></section>
         <section class="stats" aria-label="현황 요약">
           <article><span>모니터링 구간</span><strong>3 <small>개 역</small></strong><p><i class="line-chip">2</i> 강남 · 역삼 · 선릉</p></article>
           <article><span>지연 의심 구간</span><strong id="delay-count">—</strong><p id="delay-description">최근 관측 확인 중</p></article>

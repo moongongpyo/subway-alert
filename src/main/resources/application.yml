@@ -49,3 +49,8 @@ app:
   agent-timeout-seconds: ${AGENT_TIMEOUT_SECONDS:50}
   fresh-seconds: ${FRESH_SECONDS:180}
   demo-seed: ${DEMO_SEED:true}
+
+  notice-key: ${SEOUL_NOTICE_API_KEY:${SEOUL_API_KEY:}}
+  notice-base-url: ${SEOUL_NOTICE_BASE_URL:http://openapi.seoul.go.kr:8088}
+  notice-poll-ms: ${SEOUL_NOTICE_POLL_MS:120000}
+  notice-daily-budget: ${SEOUL_NOTICE_DAILY_BUDGET:800}

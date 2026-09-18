@@ -11,3 +11,7 @@
 @media(max-width:1180px){.planner-layout{grid-template-columns:minmax(0,1fr) 250px;gap:18px}.route-fields{grid-template-columns:1fr 20px 1fr}.route-fields>label:nth-of-type(3){grid-column:1/3}.route-fields>.button{grid-column:3}.route-hero-symbol{font-size:70px}}
 @media(max-width:760px){.planner-layout{grid-template-columns:1fr}.planner-aside{display:grid;grid-template-columns:1fr 1fr}.route-hero-symbol{display:none}.journey-heading h2{font-size:14px}.journey-duration strong{font-size:25px}.coordinate-fields{grid-template-columns:1fr}.coordinate-fields label{margin-top:10px}}
 @media(max-width:480px){.planner-aside{grid-template-columns:1fr}.route-fields{gap:12px;grid-template-columns:1fr 14px 1fr}.journey-card{padding:18px}.journey-card.recommended{padding:17px}.journey-leg{flex-wrap:wrap;gap:9px}.leg-details{min-width:150px}.avoid-button{margin-left:49px}.journey-meta{font-size:10px}.nav-link{padding:7px 5px;font-size:8px}.route-empty h2{font-size:15px}.route-empty p{font-size:10px}}
+
+.metro-notices-panel {margin:24px 0}.metro-notice {padding:12px 0;border-bottom:1px solid #e4e8e5}.metro-notice summary {cursor:pointer;font-weight:600;line-height:1.6}.metro-notice p {line-height:1.7;overflow-wrap:anywhere}.notice-content {white-space:pre-wrap}
+
+.metro-notices-list {max-height:320px;overflow:auto}

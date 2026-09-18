@@ -4,8 +4,23 @@
 - 목표 시연일: 2026-09-19
 - 서비스 가칭: 출근지킴이 / Subway Alert
 - 목적: 해커톤에서 실제 데이터 연결과 두 AI 에이전트의 협업을 보여주는 MVP
-- 문서 상태: 대화에서 합의한 기획. 아래의 도메인·API·에이전트 기능은 별도 표기가 없으면 구현 예정이다.
+- 문서 상태: 초기 합의 기획을 보존한 문서. 최신 구현 및 배포 변경 사항은 바로 아래를 우선한다.
 
+
+## 2026-09-18 구현 및 배포 변경
+
+사용자의 후속 요청에 따라 **바닐라 HTML/CSS/JavaScript 화면 + Spring Boot WAS + 두 Daytona 에이전트**를 구현했다. 아래 초기 기획의 로컬 서버 가정은 클라우드 배포로 변경한다.
+
+- 메인 서버: Railway, DB: Railway PostgreSQL. 로컬 개발은 H2 파일 DB.
+- Daytona는 HTTP 서버 실행이 가능하지만 실제 서울시 샘플 API 요청에서 `403 Internet is restricted on Tier 1 and Tier 2`가 확인되어 WAS를 Railway로 배치한다.
+- 에이전트: Python 표준 라이브러리 HTTP worker 두 개. OpenAI Responses API에서 read_observations, check_freshness, request_refresh, submit_decision 도구 호출.
+- 전달 방식: 서버가 각 sandbox의 private preview HTTP endpoint에 요청. 상호 메시지는 서버가 영속 저장하고 중계한다.
+- 웹 P0, 구독, 관측, 알림, 협업 타임라인, 6개 실패/회복 시연, 데이터 최신성 검사, 최대 2회 재조회, 사용자/사건/단계 중복 방지 구현.
+- 실제 키가 없는 DEMO는 `simulation`으로 명시한다. 실시간 서울시/LLM 호출은 키 연결 후 검증한다.
+- 코드/로컬 검증 완료와 클라우드 실행 상태를 구분한다. 최신 배포 결과는 작업 완료 보고를 확인한다.
+- [KEYS.md](KEYS.md): 필요한 키와 발급 링크. [DEPLOY.md](DEPLOY.md): 배포, 예산, 한계, 시연 순서.
+
+---
 ## 1. 사용자에게 제공할 가치
 
 사용자가 등록한 지하철 역·방향에 지연 징후가 생기면, 탐지 에이전트와 검증 에이전트가 데이터를 확인한 뒤 알림을 보낸다. 데이터 갱신 지연이나 수집 실패를 실제 지하철 장애로 오인하지 않도록 한다.

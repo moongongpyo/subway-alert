@@ -1,0 +1,14 @@
+.git
+.gradle
+.idea
+.venv
+.deploy
+build
+data
+logs
+.env
+.env.*
+agents
+docs
+scripts
+__pycache__

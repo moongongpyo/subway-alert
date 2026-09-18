@@ -50,3 +50,7 @@ logs/
 *.key
 .DS_Store
 Thumbs.db
+.deploy/
+.venv/
+__pycache__/
+*.pyc

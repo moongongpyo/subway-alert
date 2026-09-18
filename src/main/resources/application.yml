@@ -1,10 +1,21 @@
 spring:
   application:
     name: subway-alert
+  datasource:
+    url: ${JDBC_DATABASE_URL:jdbc:h2:file:./data/subway;DB_CLOSE_ON_EXIT=FALSE}
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:}
+  sql:
+    init:
+      mode: always
 
 server:
   port: ${PORT:8080}
   shutdown: graceful
+  forward-headers-strategy: none
+  error:
+    include-message: never
+    include-stacktrace: never
 
 management:
   endpoints:
@@ -19,3 +30,19 @@ info:
   app:
     name: Subway Alert
     description: Local coordinator for subway delay detection and verification agents
+
+app:
+  admin-token: ${APP_ADMIN_TOKEN:}
+  mode: ${APP_MODE:DEMO}
+  poll-ms: ${POLL_INTERVAL_MS:120000}
+  seoul-key: ${SEOUL_API_KEY:}
+  seoul-base-url: ${SEOUL_BASE_URL:http://swopenapi.seoul.go.kr/api/subway}
+  seoul-daily-budget: ${SEOUL_DAILY_BUDGET:900}
+  detector-url: ${DETECTOR_URL:}
+  verifier-url: ${VERIFIER_URL:}
+  detector-preview-token: ${DETECTOR_PREVIEW_TOKEN:}
+  verifier-preview-token: ${VERIFIER_PREVIEW_TOKEN:}
+  agent-token: ${AGENT_TOKEN:}
+  agent-timeout-seconds: ${AGENT_TIMEOUT_SECONDS:50}
+  fresh-seconds: ${FRESH_SECONDS:180}
+  demo-seed: ${DEMO_SEED:true}

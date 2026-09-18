@@ -1,100 +1,52 @@
-# Subway Alert · 출근지킴이
+# 출근지킴이 · Subway Alert
 
-지하철 위치·도착 정보에서 지연 징후를 찾고, 두 AI 에이전트의 검증을 거쳐 관심 구간 사용자에게 알리는 해커톤 프로젝트입니다.
+서울 지하철 2호선 강남·역삼·선릉의 지연 징후를 탐지하고 두 에이전트가 검증하는 해커톤 MVP입니다.
 
-**현재 상태: Spring Boot 초기 프로젝트입니다.** 서버 기동과 헬스 체크를 제공하며, 서울시 API·Daytona·알림 기능은 아직 연결되지 않았습니다.
+**Java 21 · Spring Boot 4.1.1 · HTML/CSS/바닐라 JavaScript · H2/PostgreSQL · Daytona Python agents**
 
-- [서비스 기획 및 구현 계획](docs/PLAN.md)
-- 로컬 서버: Java 21 / Spring Boot 4.1.1 / Gradle Wrapper
-- 기본 의존성: Spring Web MVC, Validation, Actuator
-- AI 실행 위치: Daytona 샌드박스 2개 — 탐지·검증 에이전트 각 1개 (구현 예정)
+## 구현된 기능
 
-## 실행
+- 역·내선/외선 구독, 최근 열차 위치/도착 관측, 웹 알림과 브라우저 알림
+- 생성 시각/열차 식별자 검증, 지연 의심 규칙, 일일 API 호출 예산
+- 탐지 A → 검증 B → 추가 관측 요청 → 재검증 → 발송 게이트
+- OpenAI Responses API 도구 호출, private Daytona preview 및 서비스 토큰 인증
+- 오래된 데이터·수집 실패·타임아웃·잘못된 응답 시 발송 차단
+- 사건 단계별 중복 알림 차단, 익명 사용자별 구독/알림 분리, 관리자 제어
+- 지연 / 오래된 데이터 / 수집 실패 / 관측 회복 / 타임아웃 / 응답 오류 시연
 
-Java 21 JDK가 필요합니다. Gradle은 별도 설치하지 않아도 Wrapper가 내려받습니다. 최초 빌드 시 인터넷 연결이 필요합니다.
-
-### Windows PowerShell
-
-프로젝트 루트에서 실행합니다.
-
-```powershell
-.\scripts\dev.ps1
-```
-
-스크립트는 `JAVA_HOME`을 우선 사용하고, 설정되지 않은 경우 사용자의 `.jdks` 폴더에서 Java 21을 찾습니다. IntelliJ에서는 프로젝트 SDK와 Gradle JVM을 Java 21로 지정한 뒤 `SubwayAlertApplication`을 실행할 수도 있습니다.
-
-직접 실행하는 경우:
+## 로컬 실행
 
 ```powershell
-$env:JAVA_HOME = 'C:\path\to\jdk-21'
-.\gradlew.bat bootRun
+.\scripts\dev.ps1 run
 ```
 
-### macOS / Linux
+Java 21이 필요합니다. Windows 스크립트는 IntelliJ의 사용자 `.jdks`에서도 JDK 21을 찾습니다. 다른 OS는 `./gradlew bootRun`을 사용합니다.
 
-Java 21이 `JAVA_HOME` 또는 `PATH`에 설정된 상태에서 실행합니다.
+- 화면: http://localhost:8080
+- 상태: http://localhost:8080/actuator/health
+- 기본 모드: DEMO. 키 없이 규칙 기반 합성 데이터 시연 가능.
+- 로컬 DB: `data/subway.mv.db`. 서버를 종료한 뒤 파일을 백업합니다.
+- 로컬 직접 접속에서는 관리자 토큰 없이 시연할 수 있습니다. 외부 배포는 `APP_ADMIN_TOKEN`이 필요합니다.
+- `.env`는 Python 배포 스크립트가 읽습니다. Spring은 OS 환경 변수 또는 `--KEY=value` Spring 설정으로 주입합니다.
 
-```bash
-./gradlew bootRun
-```
+## 클라우드 배치
 
-기본 포트는 `8080`입니다. 다른 포트를 쓰려면 `PORT` 환경 변수를 설정합니다.
+Railway에 WAS + PostgreSQL, Daytona Personal에 탐지/검증 샌드박스 2개를 둡니다. 이 계정의 Daytona에서 서울시 API가 Tier 1/2 네트워크 제한으로 403을 반환하여 메인 서버는 Railway를 사용합니다. 포트포워딩은 필요 없습니다.
+
+- [기획 및 구현 범위](docs/PLAN.md)
+- [필요한 키와 발급 링크](docs/KEYS.md)
+- [배포·재시작·시연 절차](docs/DEPLOY.md)
+
+## 테스트
 
 ```powershell
-$env:PORT = '8081'
-.\scripts\dev.ps1
+.\scripts\dev.ps1 test
+python -m unittest discover -s agents -v
+node --check src/main/resources/static/app.js
 ```
 
-## 실행 확인
+실제 HTTP를 통한 구독·시연·재조회·중복 방지·사용자 격리·오류 차단과 worker 도구 호출 프로토콜을 검증합니다. OpenAI 프로토콜 테스트는 모의 응답을 사용하므로 실제 유료 API 연결 성공을 의미하지 않습니다.
 
-```powershell
-Invoke-RestMethod http://localhost:8080/actuator/health
-```
+## 주의할 표현
 
-정상 응답:
-
-```json
-{"status":"UP"}
-```
-
-아직 웹 화면이 없으므로 `/` 경로의 404는 정상입니다. 현재 준비된 확인 경로는 `/actuator/health`입니다.
-
-## 테스트 / 빌드
-
-```powershell
-.\scripts\dev.ps1 -Task test
-.\scripts\dev.ps1 -Task build
-```
-
-또는:
-
-```bash
-./gradlew test
-./gradlew build
-```
-
-빌드 결과는 `build/libs/`에 생성됩니다. 실행 가능한 JAR은 이름에 `-plain`이 없는 파일입니다.
-
-## 구조
-
-```text
-subway-alert/
-├── docs/PLAN.md                       # 합의된 기획, 에이전트 역할, 개발 순서
-├── scripts/dev.ps1                   # Windows 개발 실행 도우미
-├── src/main/java/com/megabridge/subwayalert/
-│   └── SubwayAlertApplication.java
-├── src/main/resources/application.yml
-├── src/test/java/com/megabridge/subwayalert/
-│   └── SubwayAlertApplicationTests.java
-├── build.gradle
-└── gradlew / gradlew.bat
-```
-
-## 다음 개발 순서
-
-1. 서울시 위치·도착 API 인증키 연결과 수집 데이터 저장.
-2. 로컬 서버에서 Daytona 샌드박스 2개에 작업을 보내고 결과를 받는 연결.
-3. 탐지·검증·추가 조회 루프 및 중복 알림 방지.
-4. 관심 구간 등록, 에이전트 활동 화면, 시뮬레이션 모드.
-
-실제 API 키는 저장소에 넣지 않습니다. 연동 구현 시 환경 변수 또는 Git에서 제외한 `application-local.yml`을 사용합니다. 현재 코드는 키 없이 실행됩니다. `.env` 파일을 자동으로 읽는 기능은 아직 없습니다.
+표시되는 상태는 **지연 의심**이며 공식 장애 확정이 아닙니다. 두 API가 같은 원천이라 두 에이전트의 동의도 독립 출처 확인이 아닙니다. 키 미설정 상태를 실시간 운행 데이터나 실제 LLM 분석으로 표시하지 않습니다.

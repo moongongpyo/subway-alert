@@ -41,12 +41,6 @@ app:
   tmap-key: ${TMAP_APP_KEY:}
   tmap-url: ${TMAP_API_URL:https://apis.openapi.sk.com/transit/routes}
   tmap-daily-budget: ${TMAP_DAILY_BUDGET:10}
-  detector-url: ${DETECTOR_URL:}
-  verifier-url: ${VERIFIER_URL:}
-  detector-preview-token: ${DETECTOR_PREVIEW_TOKEN:}
-  verifier-preview-token: ${VERIFIER_PREVIEW_TOKEN:}
-  agent-token: ${AGENT_TOKEN:}
-  agent-timeout-seconds: ${AGENT_TIMEOUT_SECONDS:50}
   fresh-seconds: ${FRESH_SECONDS:180}
   demo-seed: ${DEMO_SEED:true}
 
@@ -54,3 +48,6 @@ app:
   notice-base-url: ${SEOUL_NOTICE_BASE_URL:http://openapi.seoul.go.kr:8088}
   notice-poll-ms: ${SEOUL_NOTICE_POLL_MS:120000}
   notice-daily-budget: ${SEOUL_NOTICE_DAILY_BUDGET:800}
+
+  openai-key: ${OPENAI_API_KEY:}
+  openai-model: ${OPENAI_MODEL:gpt-4.1-mini}

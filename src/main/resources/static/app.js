@@ -1,148 +1,23 @@
-'use strict';
-const $ = selector => document.querySelector(selector);
-const $$ = selector => [...document.querySelectorAll(selector)];
-let data, station = '강남', direction = '내선', polling = false, initial = true, watchedRun;
-let toastTimer;
-const seenNotices = new Set();
-const stateNames = {NORMAL:'지연 징후가 관측되지 않았어요', OBSERVING:'관측을 모으고 있어요', DELAY_SUSPECTED:'지연이 의심돼요', DATA_UNAVAILABLE:'데이터를 확인할 수 없어요', VERIFY_PENDING:'추가 확인을 기다리고 있어요', RECOVERED:'관측이 회복됐어요', REJECTED:'지연 후보 조건을 충족하지 않았어요'};
-const names = {detector:'탐지 A', verifier:'검증 B', server:'서버', collector:'수집기', tool:'도구'};
-const scenarioNames = {DELAY:'지연 징후', STALE:'오래된 데이터', FAILURE:'수집 실패', RECOVERY:'관측 회복', TIMEOUT:'타임아웃', INVALID_RESPONSE:'잘못된 응답', LIVE_POLL:'실시간 수집'};
-const time = value => value ? new Intl.DateTimeFormat('ko-KR', {timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(value)) : '—';
-function el(tag, className, text) { const node = document.createElement(tag); if(className) node.className = className; if(text !== undefined) node.textContent = text; return node; }
-function empty(container, text) { container.replaceChildren(el('div','empty',text)); }
-function toast(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 4500); }
-async function api(path, method = 'GET', body) {
-  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15000);
-  try {
-    const headers = {'X-Requested-With':'SubwayAlert'};
-    if(body !== undefined) headers['Content-Type'] = 'application/json';
-    const response = await fetch('/api' + path, {method, headers, credentials:'same-origin', body:body === undefined ? undefined : JSON.stringify(body), signal:controller.signal});
-    let result = {}; try { result = await response.json(); } catch { /* unexpected response handled below */ }
-    if(!response.ok) throw new Error(result.message || (`요청을 처리하지 못했어요 (${response.status}).`));
-    return result;
-  } finally { clearTimeout(timer); }
-}
-function navigate() {
-  const titles = {routes:'대안 경로 안내',overview:'운행 대시보드',agents:'에이전트 활동',alerts:'내 알림',settings:'연결 및 시연'};
-  const page = Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1) : 'routes';
-  $$('.page').forEach(p => p.hidden = p.id !== 'page-' + page);
-  $$('.nav-link').forEach(link => { const selected = link.dataset.page === page; link.classList.toggle('active',selected); if(selected) link.setAttribute('aria-current','page'); else link.removeAttribute('aria-current'); });
-  $('#page-title').textContent = titles[page];
-}
-function renderRoute() {
-  if(!data) return;
-  $$('.station').forEach(button => { button.classList.toggle('active',button.dataset.station === station); button.setAttribute('aria-pressed',String(button.dataset.station === station)); });
-  $$('[data-direction]').forEach(button => { button.classList.toggle('selected',button.dataset.direction === direction); button.setAttribute('aria-pressed',String(button.dataset.direction === direction)); });
-  $('#selected-station').textContent = station + '역';
-  const route = data.routes.find(r => r.station === station && r.direction === direction);
-  const observation = route.observations[0];
-  const stale = !observation || (Date.now() - Date.parse(observation.generatedAt)) / 1000 > data.settings.freshSeconds;
-  const state = stale ? 'DATA_UNAVAILABLE' : route.incident?.state || 'OBSERVING';
-  const status = $('#route-status'); status.className = 'route-status' + (state === 'DELAY_SUSPECTED' ? ' warning' : ['DATA_UNAVAILABLE','VERIFY_PENDING','OBSERVING'].includes(state) ? ' unknown' : '');
-  status.querySelector('.status-symbol').textContent = state === 'DELAY_SUSPECTED' ? '!' : ['DATA_UNAVAILABLE','VERIFY_PENDING','OBSERVING'].includes(state) ? '⋯' : '↗';
-  status.querySelector('h3').textContent = stateNames[state] || state;
-  status.querySelector('p').textContent = stale ? '최신 데이터가 없습니다. 시연 실행 또는 다음 실시간 수집을 기다려 주세요.' : route.incident?.summary || '관측을 모으는 중입니다. 지연 여부를 판단하려면 연속 데이터가 필요합니다.';
-  const list = $('#observations'); list.replaceChildren();
-  if(!route.observations.length) return empty(list,'아직 수집된 관측이 없어요.');
-  route.observations.slice(0,3).forEach(o => {
-    const row = el('div','observation'), info = el('div'), eta = el('div','eta');
-    info.append(el('strong','',o.position + ' 부근'),el('p','',`${data.mode === 'DEMO' ? '시연 열차' : o.trainId.split(':').at(-1) + '번 열차'} · ${o.source}`));
-    eta.append(el('b','',`${Math.floor(o.etaSeconds/60)}분 ${o.etaSeconds%60 ? o.etaSeconds%60 + '초' : ''}`),el('span','',time(o.generatedAt) + ' 생성'));
-    row.append(el('span','train-symbol','▣'),info,eta); row.title = `생성: ${time(o.generatedAt)} / 수집: ${time(o.collectedAt)}`; list.append(row);
-  });
-}
-function renderSubscriptions() {
-  const list = $('#subscriptions'); list.replaceChildren();
-  $('#sub-total').textContent = `${data.subscriptions.length} / 6`;
-  $('#subscription-count').textContent = data.subscriptions.length ? `${data.subscriptions.length}개 관심 구간 구독 중` : '관심 구간을 등록해 주세요';
-  if(!data.subscriptions.length) return empty(list,'관심 구간을 등록하고\n내 출근길 알림을 받아보세요.');
-  data.subscriptions.forEach(sub => {
-    const row = el('div','subscription-item'), remove = el('button','', '×'); remove.type = 'button'; remove.setAttribute('aria-label',`${sub.station} ${sub.direction} 구독 해제`);
-    remove.addEventListener('click',async() => { try { await api(`/subscriptions/${encodeURIComponent(sub.id)}`,'DELETE'); await refresh(); toast('관심 구간을 해제했어요.'); } catch(e) { toast(e.message); } });
-    row.append(el('i','line-chip','2'),el('strong','',sub.station),el('small','',sub.direction+' 순환'),remove); list.append(row);
-  });
-}
-function renderAlerts(target, items, readButton) {
-  target.replaceChildren();
-  if(!items.length) return empty(target,'아직 알림이 없어요. 관심 구간에서 검증된 지연 징후가 생기면 알려드릴게요.');
-  items.forEach(n => {
-    const row = el('article','alert-item'), info = el('div'), title = el('h3','',n.title), when = el('time','',time(n.createdAt)); when.dateTime = n.createdAt;
-    if(!n.read) title.append(el('span','unread-dot'));
-    info.append(title,el('p','',n.body)); row.append(el('span','alert-icon' + (n.phase === 'RECOVERED' ? ' recovered' : ''),n.phase === 'RECOVERED' ? '↗' : '!'),info,when);
-    if(readButton && !n.read) { const button = el('button','read-button','읽음'); button.addEventListener('click',async() => { try { await api(`/notifications/${encodeURIComponent(n.id)}/read`,'PATCH'); await refresh(); } catch(e) { toast(e.message); } }); row.append(button); }
-    target.append(row);
-  });
-}
-function renderActivity() {
-  $('#activity-badge').textContent = data.busy ? '검증 진행 중' : '대기 중';
-  for(const role of ['detector','verifier']) { const job = data.jobs.find(j => j.role === role); $('#' + role + '-state').textContent = job?.state === 'RUNNING' ? '분석 중' : job?.state === 'SUCCEEDED' ? '완료' : job ? '보류' : '대기'; }
-  const timeline = $('#timeline'); timeline.replaceChildren();
-  if(!data.messages.length) empty(timeline,'시연 또는 실시간 수집을 실행하면 협업 기록이 여기에 나타납니다.');
-  data.messages.slice().reverse().forEach(m => {
-    const row = el('div','timeline-row'), info = el('div'), heading = el('h3','',`${names[m.sender] || m.sender} → ${names[m.recipient] || m.recipient}`);
-    heading.append(el('span','',m.type + (m.attempt ? ` · 재조회 ${m.attempt}` : '')));
-    info.append(heading,el('p','',m.detail)); row.append(el('time','',time(m.createdAt)),el('span','timeline-avatar',m.sender === 'detector' ? 'A' : m.sender === 'verifier' ? 'B' : '↻'),info); timeline.append(row);
-  });
-  const runs = $('#runs'); runs.replaceChildren();
-  if(!data.runs.length) empty(runs,'아직 실행 기록이 없습니다.');
-  data.runs.slice(0,8).forEach(run => { const row = el('div','run-row'); row.append(el('strong','',scenarioNames[run.scenario] || run.scenario),el('span','subtle-tag',run.state),el('p','',run.detail),el('time','',time(run.startedAt))); runs.append(row); });
-  if(watchedRun) { const run = data.runs.find(r => r.id === watchedRun); if(run) $('#scenario-result').textContent = `${scenarioNames[run.scenario] || run.scenario} · ${run.state} · ${run.detail}`; if(run?.finishedAt) { watchedRun = null; toast('시연 처리가 끝났어요. 구간 상태와 협업 기록을 확인하세요.'); } }
-}
-function render() {
-  const demo = data.mode === 'DEMO';
-  $('#mode-badge').textContent = demo ? 'SIMULATION' : 'LIVE DATA'; $('#mode-badge').classList.toggle('live',!demo);
-  $('#mode-description').textContent = demo ? '시연 모드 · 합성 데이터입니다. 실제 운행 상황과 관계없습니다.' : '실시간 모드 · 서울시 위치·도착 정보 기반의 지연 의심을 확인합니다.';
-  const delays = data.routes.filter(r => r.incident?.state === 'DELAY_SUSPECTED').length;
-  $('#delay-count').textContent = delays; $('#delay-description').textContent = delays ? '마지막 판정 기준 · 구간 최신성 확인' : '최신 관측 여부를 구간에서 확인하세요';
-  $('#engine-status').textContent = !data.settings.agentsConfigured ? '로컬 규칙 기반 시뮬레이션' : data.jobs[0]?.engine === 'openai' ? 'OpenAI 도구 호출 연결' : '샌드박스 연결 · 실행 기록 확인';
-  const unread = data.notifications.filter(n => !n.read).length; $('#unread-count').textContent = unread; $('#nav-count').textContent = unread;
-  const status = $('#settings-status'); status.replaceChildren();
-  for(const [title,ready,description] of [['TMAP 경로 API',data.settings.tmapConfigured,`오늘 ${data.settings.tmapCallsToday} / ${data.settings.tmapDailyBudget}회`],['서울교통공사 공식 공지 API',data.settings.seoulNoticeConfigured,'키 연결됨 · 공지 자동 수집'],['서울시 위치·도착 API (선택)',true,data.settings.seoulConfigured ? '키 연결됨 · 보조 관측용' : '미연결 · 공식 공지와 별도'],['Daytona 에이전트 A · B',data.settings.agentsConfigured,'연결 주소 설정'],['관측 데이터 모드',true,demo ? 'DEMO · 합성 데이터' : 'LIVE · 실제 데이터']]) { const row = el('div','setting-row'); row.append(el('strong','',title),el('span',ready?'ready':'',ready?description:'설정 필요')); status.append(row); }
-  $('#quota-text').textContent = `${data.settings.callsToday} / ${data.settings.dailyBudget}`; $('#quota-progress').max = data.settings.dailyBudget; $('#quota-progress').value = data.settings.callsToday;
-  $$('[data-scenario]').forEach(button => button.disabled = data.busy || !demo);
-  $('#set-demo').disabled = data.busy || demo; $('#set-live').disabled = data.busy || !demo || !data.settings.seoulConfigured || !data.settings.agentsConfigured; $('#collect-now').disabled = data.busy || demo;
-  $('#last-updated').textContent = `마지막 화면 갱신 ${time(data.serverTime)} KST`;
-  renderRoute(); renderSubscriptions(); renderActivity(); renderAlerts($('#recent-alerts'),data.notifications.slice(0,3),false); renderAlerts($('#all-alerts'),data.notifications,true);
-  for(const n of data.notifications) { if(!initial && !seenNotices.has(n.id) && 'Notification' in window && Notification.permission === 'granted') new Notification(n.title,{body:n.body,tag:n.id,icon:'/favicon.svg'}); seenNotices.add(n.id); }
-  initial = false;
-  if(typeof renderPlannerSettings === 'function') renderPlannerSettings();
-}
-async function refresh() {
-  if(polling) return;
-  polling = true;
-  try { data = await api('/dashboard'); render(); $('#error-banner').hidden = true; $('#connection').textContent = '서버 연결됨'; $('#connection-dot').classList.remove('offline'); }
-  catch(e) { $('#error-banner').textContent = '서버 연결을 확인해 주세요. 표시된 정보는 마지막 수신 결과입니다. 자동으로 다시 시도합니다.'; $('#error-banner').hidden = false; $('#connection').textContent = '연결 끊김'; $('#connection-dot').classList.add('offline'); }
-  finally { polling = false; }
-}
-window.addEventListener('hashchange',navigate); navigate();
-$$('[data-station]').forEach(b => b.addEventListener('click',() => { station = b.dataset.station; renderRoute(); }));
-$$('[data-direction]').forEach(b => b.addEventListener('click',() => { direction = b.dataset.direction; renderRoute(); }));
-$('#add-subscription').addEventListener('click',() => $('#subscription-dialog').showModal());
-$('#close-dialog').addEventListener('click',() => $('#subscription-dialog').close());
-$('#subscription-form').addEventListener('submit',async e => { e.preventDefault(); const button = e.currentTarget.querySelector('[type=submit]'); button.disabled = true; try { const form = new FormData(e.currentTarget); await api('/subscriptions','POST',{station:form.get('station'),direction:form.get('direction')}); $('#subscription-dialog').close(); await refresh(); toast('관심 구간을 등록했어요.'); } catch(error) { toast(error.message); } finally { button.disabled = false; } });
-for(const [id,mode] of [['set-demo','DEMO'],['set-live','LIVE']]) $('#' + id).addEventListener('click',async() => { try { await api('/admin/mode','POST',{mode}); await refresh(); toast(mode === 'DEMO' ? '시연 모드로 전환했어요.' : '실시간 모드로 전환했어요.'); } catch(e) { toast(e.message); } });
-$('#collect-now').addEventListener('click',async() => { try { const run = await api('/admin/collect','POST',{}); watchedRun = run.id; await refresh(); toast('서울시 데이터 수집을 시작했어요.'); } catch(e) { toast(e.message); } });
-$$('[data-scenario]').forEach(button => button.addEventListener('click',async() => { button.disabled = true; try { station = $('#demo-station').value; direction = $('#demo-direction').value; const run = await api('/admin/scenarios','POST',{scenario:button.dataset.scenario,station,direction,requestId:crypto.randomUUID()}); watchedRun = run.id; $('#scenario-result').textContent = '시연 진행 중 · 탐지와 검증 기록을 저장하고 있습니다.'; await refresh(); } catch(e) { toast(e.message); } finally { if(data) button.disabled = data.busy || data.mode !== 'DEMO'; } }));
-$('#enable-notifications').addEventListener('click',async() => { if(!('Notification' in window)) return toast('이 브라우저는 알림을 지원하지 않습니다. 웹 알림 목록을 이용해 주세요.'); const permission = await Notification.requestPermission(); toast(permission === 'granted' ? '페이지가 열려 있는 동안 새 알림을 받을 수 있어요.' : '브라우저 알림이 허용되지 않았어요. 웹 알림은 계속 표시됩니다.'); });
-async function loop() { await refresh(); setTimeout(loop,5000); } loop();
-
-async function refreshMetroNotices() {
-  try {
-    const feed = await api('/metro-notices');
-    const stamp = value => value ? new Date(value).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}) : '미제공';
-    const labels = {ENDED:'종료 시각 경과',SCHEDULED:'예정',TIME_WINDOW:'공지 기간 내 · 운행 상태 확인 필요',UNKNOWN:'현재 상태 확인 필요'};
-    $$('.metro-notices-status').forEach(node => node.textContent = !feed.configured ? '서울시 공지 API 인증키 연결 대기' : feed.error || (feed.stale ? '최신 공지를 확인하지 못했습니다. 아래는 마지막 수집 자료입니다.' : `${feed.source} · 수집 ${stamp(feed.fetchedAt)} · 최신 공지 최대 20건 표시`));
-    $$('.metro-notices-list').forEach(list => {
-      list.replaceChildren();
-      if(!feed.items.length) return empty(list,feed.configured ? '표시할 수집 공지가 없습니다. 장애가 없다는 뜻은 아닙니다.' : '서울 열린데이터광장 인증키를 연결하면 공지를 수집합니다.');
-      feed.items.slice(0,20).forEach(({notice:n,timing}) => {
-        const detail=el('details','metro-notice'), summary=el('summary','',`${labels[timing]} · ${n.title}`);
-        detail.append(summary,el('p','',`${n.lines || '노선 미제공'} · 발표 ${stamp(n.publishedAt)}`),el('p','notice-content',n.content),el('p','footnote',`시작 ${stamp(n.startsAt)} / 종료 ${stamp(n.endsAt)} · ${n.direction || '방향 미제공'}`));
-        list.append(detail);
-      });
-      if(feed.items.length>20 || feed.truncated) list.append(el('p','footnote','일부 공지만 표시하고 있습니다. 전체 공지는 출처에서 확인하세요.'));
-    });
-  } catch(e) { $$('.metro-notices-status').forEach(node=>node.textContent='공지를 새로 확인하지 못했습니다. 표시 내용은 이전 수집 자료입니다.'); }
-  setTimeout(refreshMetroNotices,60000);
-}
-refreshMetroNotices();
+ 'use strict';
+const $=s=>document.querySelector(s), el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
+const places={강남:{name:'강남',lon:127.027619,lat:37.497952},역삼:{name:'역삼',lon:127.036456,lat:37.500622},선릉:{name:'선릉',lon:127.048203,lat:37.504286}};
+const minutes=n=>Math.ceil(n/60)+'분',modes={WALK:'도보',SUBWAY:'지하철',BUS:'버스',TRAIN:'철도',OTHER:'기타'};
+let session,busy=false,polling=false,expired=false,settings,noticeLoaded=false;
+async function api(path,method='GET',body){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);try{const res=await fetch('/api'+path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json','X-Requested-With':'SubwayAlert'},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});const value=await res.json();if(!res.ok)throw Error(value.message||'잠시 후 다시 시도해 주세요.');return value;}finally{clearTimeout(timer);}}
+function status(text,error=false){$('#status').textContent=text;$('#status').classList.toggle('error',error);}
+function toast(text){$('#toast').textContent=text;$('#toast').hidden=false;setTimeout(()=>$('#toast').hidden=true,4000);}
+function fields(){for(const side of ['from','to'])$('#custom-'+side).hidden=$('#'+side).value!=='custom';}
+for(const side of ['from','to'])$('#'+side).addEventListener('change',fields);
+$('#swap').onclick=()=>{for(const suffix of ['','-name','-lon','-lat']){const a=$('#from'+suffix),b=$('#to'+suffix);[a.value,b.value]=[b.value,a.value];}fields();};
+function place(side){const value=$('#'+side).value;if(value!=='custom')return places[value];const name=$('#'+side+'-name').value.trim(),lon=$('#'+side+'-lon').value,lat=$('#'+side+'-lat').value;if(!name||!lon||!lat)throw Error('장소 이름과 경도·위도를 입력해 주세요.');return{name,lon:Number(lon),lat:Number(lat)};}
+function controls(){$('#search').disabled=busy;$('#search').textContent=busy?'검색 중…':'경로 찾기';}
+$('#search-form').onsubmit=async event=>{event.preventDefault();if(busy)return;busy=true;session=undefined;expired=false;$('#results').replaceChildren();$('#blocks').replaceChildren();status('이동 가능한 경로를 찾고 있습니다…');controls();try{session=await api('/routes','POST',{from:place('from'),to:place('to'),provider:$('#demo').checked?'DEMO':'TMAP'});render();}catch(e){status(e.message,true);}finally{busy=false;controls();if(session)render();}};
+async function avoid(path,method,body){if(busy||session?.busy||expired)return;busy=true;controls();try{session=await api('/routes/'+session.id+path,method,body);}catch(e){toast(e.message);}finally{busy=false;controls();render();}}
+function render(){if(!session)return;const disabled=busy||session.busy||expired;const messages={ANALYZING:'조건에 맞는 경로를 확인하고 있습니다…',VERIFIED:session.blocks.length?'이용 불가 구간을 피한 경로입니다.':'소요시간이 짧은 경로부터 확인해 보세요.',NO_ALTERNATIVE:'선택한 구간을 피할 수 있는 후보가 없습니다. 회피를 해제하거나 출발·도착지를 바꿔 주세요.',VERIFY_PENDING:'경로 검증을 완료하지 못했습니다. 추천 없이 후보만 표시합니다.',RULE_CHECKED:'구간 조건을 검사한 경로입니다.'};status((session.plan.provider==='DEMO'?'[예시 경로] ':'')+(expired?'경로 정보가 만료됐습니다. 다시 검색해 주세요.':messages[session.state]||'경로 후보를 확인해 주세요.'),expired||['NO_ALTERNATIVE','VERIFY_PENDING'].includes(session.state));
+const blocks=$('#blocks');blocks.replaceChildren();for(const b of session.blocks){const chip=el('div','block'),remove=el('button','','×');remove.type='button';remove.disabled=disabled;remove.setAttribute('aria-label',b.leg.route+' 회피 해제');remove.onclick=()=>avoid('/avoid/'+b.id,'DELETE');chip.append(el('span','',b.leg.route+' · '+b.leg.start+' → '+b.leg.end+' 제외'),remove);blocks.append(chip);}
+const list=$('#results'),openIds=new Set([...list.querySelectorAll('details.route-card[open]')].map(n=>n.dataset.id));list.replaceChildren();const routes=[...session.plan.journeys].sort((a,b)=>Number(b.id===session.recommendedId)-Number(a.id===session.recommendedId)||a.totalSeconds-b.totalSeconds);if(!routes.length)list.append(el('p','start-message','조회된 경로가 없습니다. 출발지나 도착지를 바꿔 주세요.'));
+for(const route of routes){const check=session.assessments.find(c=>c.routeId===route.id),selected=route.id===session.recommendedId&&!expired,card=el('details','route-card'+(selected?' recommended':'')+(!check.eligible?' excluded':''));card.dataset.id=route.id;card.open=openIds.has(route.id);const summary=el('summary','route-summary'),left=el('div'),labels=el('div','route-labels');if(selected)labels.append(el('span','chip',session.blocks.length?'대안 추천':'추천'));if(!check.eligible)labels.append(el('span','chip muted','제외'));labels.append(el('span','route-name',route.legs.filter(l=>l.mode!=='WALK').map(l=>l.route||modes[l.mode]||l.mode).join(' → ')||'도보'));left.append(labels,el('div','duration',minutes(route.totalSeconds)),el('div','meta',`환승 ${route.transfers}회 · 도보 ${minutes(route.walkSeconds)}${route.totalFare===null?'':' · '+route.totalFare.toLocaleString('ko-KR')+'원'}`));summary.append(left,el('span','expand','상세 경로 ⌄'));card.append(summary);if(!check.eligible)card.append(el('p','conflict',check.reasons.join(' · ')));const legs=el('div','legs');for(const leg of route.legs){const row=el('div','leg '+leg.mode.toLowerCase()),info=el('div');info.append(el('strong','',(leg.route||modes[leg.mode]||leg.mode)+' · '+minutes(leg.durationSeconds)),el('p','',leg.start+' → '+leg.end));if(leg.stops.length>2){const stops=el('details','stops');stops.append(el('summary','',`정류장 ${leg.stops.length}곳`),el('p','',leg.stops.map(s=>s.name).join(' → ')));info.append(stops);}row.append(el('span','mode',modes[leg.mode]||leg.mode),info);if(['SUBWAY','BUS'].includes(leg.mode)){const button=el('button','avoid','이 구간 피하기');button.type='button';button.disabled=disabled;button.setAttribute('aria-label',leg.route+' '+leg.start+'에서 '+leg.end+' 구간 피하기');button.onclick=()=>avoid('/avoid','POST',{legId:leg.id,scope:'SEGMENT',reason:'이용 불가'});row.append(button);}legs.append(row);}card.append(legs);list.append(card);}}
+setInterval(async()=>{if(!session||busy||polling||expired)return;if(Date.now()>=Date.parse(session.expiresAt)){expired=true;render();return;}if(!session.busy)return;polling=true;const id=session.id;try{const next=await api('/routes/'+id);if(session?.id===id){session=next;render();}}catch(e){status('연결이 잠시 끊겼습니다. 다시 확인하고 있습니다.',true);}finally{polling=false;}},2500);
+async function loadNotices(){try{const feed=await api('/metro-notices');$('#notice-status').textContent=!feed.configured?'운행 공지가 아직 연결되지 않았습니다.':feed.error|| (feed.stale?'최근 공지를 확인하지 못했습니다. 아래는 이전 자료입니다.':'최근 공지입니다. 종료 시각이 없는 공지는 현재 운행 상태를 확인해 주세요.');const list=$('#notice-list');list.replaceChildren();for(const {notice:n,timing} of feed.items.slice(0,8)){const item=el('details'),date=n.publishedAt?new Date(n.publishedAt).toLocaleDateString('ko-KR',{timeZone:'Asia/Seoul'}):'';item.append(el('summary','',`${timing==='ENDED'?'[종료] ':timing==='SCHEDULED'?'[예정] ':'[상태 확인] '}${n.title}`),el('p','',date+' · '+n.lines),el('p','',n.content));list.append(item);}if(!feed.items.length)list.append(el('p','','표시할 공지가 없습니다. 장애가 없다는 뜻은 아닙니다.'));}catch(e){$('#notice-status').textContent='공지 연결을 확인하지 못했습니다.';}}
+$('.notices').addEventListener('toggle',()=>{if($('.notices').open&&!noticeLoaded){noticeLoaded=true;loadNotices();}});
+api('/dashboard').then(d=>{settings=d.settings;$('#availability').textContent=settings.tmapConfigured?'':'실제 경로 연결 전 · 예시 경로를 이용해 주세요.';if(!settings.tmapConfigured)$('#demo').checked=true;}).catch(()=>$('#availability').textContent='서버 연결을 확인해 주세요.');

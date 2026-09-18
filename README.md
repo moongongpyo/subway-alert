@@ -1,61 +1,28 @@
-# 출근지킴이 · Subway Alert
+# 다음길
 
-버스·지하철의 이용 불가 구간을 피하는 **대안 경로 안내** 해커톤 MVP입니다. TMAP 후보를 경로 계획 A와 독립 검증 B가 검사하고, 서울시 열차 관측/알림을 보조 기능으로 제공합니다.
+TMAP 대중교통 후보를 비교하고, 이용할 수 없는 구간을 제외해 대안을 찾는 서비스입니다.
 
-[배포된 앱](https://subway-alert-production.up.railway.app) · [배포 상태와 남은 연결](docs/STATUS.md)
+## 구성
 
-**Java 21 · Spring Boot 4.1.1 · HTML/CSS/바닐라 JavaScript · H2/PostgreSQL · Daytona Python agents**
+- Java 21 / Spring Boot: 웹 서버, 경로 검색, 공지 수집, OpenAI 도구 실행·계획·검증을 하나의 프로세스에서 처리
+- 바닐라 HTML / CSS / JavaScript: 검색 → 경로 상세 → 구간 회피
+- Railway: Spring 서버 및 PostgreSQL
+- OpenAI Responses API: 계획/검증 역할을 각각 호출. 도구는 Java 메서드로 실행하며 별도 Python 또는 Daytona 서버가 필요하지 않습니다.
+- TMAP: 실제 후보 경로. 서울교통공사: 공식 운행 공지.
 
-## 구현된 기능
+## 실행
 
-- TMAP 경로 검색, 구간별 버스·지하철·도보 안내, 예상 시간/환승/요금 비교
-- 승차 구간 또는 노선 전체 회피, 겹치는 후보 제외, 추가 소요시간, 대안 없음 처리
-- 경로 계획 A → 독립 검사 B → 필요 시 수정 요청 → 서버 최종 검사
-- 5분 캐시/세션, TMAP 호출 예산, 타 사용자 경로 세션 격리
-- 지하철 → 버스 A → 버스 B → 대안 없음의 키 없는 합성 시연
-- 역·내선/외선 구독, 최근 열차 위치/도착 관측, 웹 알림과 브라우저 알림
-- 생성 시각/열차 식별자 검증, 지연 의심 규칙, 일일 API 호출 예산
-- 탐지 A → 검증 B → 추가 관측 요청 → 재검증 → 발송 게이트
-- OpenAI Responses API 도구 호출, private Daytona preview 및 서비스 토큰 인증
-- 오래된 데이터·수집 실패·타임아웃·잘못된 응답 시 발송 차단
-- 사건 단계별 중복 알림 차단, 익명 사용자별 구독/알림 분리, 관리자 제어
-- 지연 / 오래된 데이터 / 수집 실패 / 관측 회복 / 타임아웃 / 응답 오류 시연
+Java 21에서 환경 변수를 설정하고 `./gradlew bootRun`을 실행합니다. `.env`는 Spring에서 자동으로 읽지 않습니다.
 
-## 로컬 실행
+필수 연결: `TMAP_APP_KEY`, `OPENAI_API_KEY`. 공지: `SEOUL_NOTICE_API_KEY`. 모델 기본값: `OPENAI_MODEL=gpt-4.1-mini`.
+로컬 DB 기본값은 H2이며, 배포 시 `JDBC_DATABASE_URL`, `DB_USERNAME`, `DB_PASSWORD`로 PostgreSQL을 연결합니다.
 
-```powershell
-.\scripts\dev.ps1 run
-```
+`./gradlew test`로 서버 규칙, OpenAI 도구 계약, 사용자별 경로 격리 등을 검증합니다.
 
-Java 21이 필요합니다. Windows 스크립트는 IntelliJ의 사용자 `.jdks`에서도 JDK 21을 찾습니다. 다른 OS는 `./gradlew bootRun`을 사용합니다.
+## 동작 범위
 
-- 화면: http://localhost:8080
-- 상태: http://localhost:8080/actuator/health
-- 기본 모드: DEMO. 키 없이 규칙 기반 합성 데이터 시연 가능.
-- 로컬 DB: `data/subway.mv.db`. 서버를 종료한 뒤 파일을 백업합니다.
-- 해커톤 운영 제어는 사용자 승인에 따라 토큰 없이 공개됩니다. 공개 URL의 누구나 서버 전체 모드 변경·수집·장애 시연을 실행할 수 있습니다.
-- `.env`는 Python 배포 스크립트가 읽습니다. Spring은 OS 환경 변수 또는 `--KEY=value` Spring 설정으로 주입합니다.
+TMAP이 반환한 후보 내에서 소요시간·환승·도보 순으로 추천합니다. 회피 시 캐시된 후보를 재검사하며 경로를 임의 생성하지 않습니다. 정보는 5분 후 만료됩니다. AI 오류 시 추천을 보류합니다. 공지의 종료 시각이 없으면 현재 장애로 단정하지 않습니다.
 
-## 클라우드 배치
+운영 대시보드, 설정, 시연 제어, 에이전트 로그는 사용자 화면에서 제거했습니다. 기존 관측·운영 API는 호환성을 위해 서버에 남아 있으며 사용자 승인에 따라 운영 API는 공개 상태입니다.
 
-Railway에 WAS + PostgreSQL, Daytona Personal에 탐지/검증 샌드박스 2개를 둡니다. 이 계정의 Daytona에서 서울시 API가 Tier 1/2 네트워크 제한으로 403을 반환하여 메인 서버는 Railway를 사용합니다. 포트포워딩은 필요 없습니다.
-
-- [기획 및 구현 범위](docs/PLAN.md)
-- [필요한 키와 발급 링크](docs/KEYS.md)
-- [배포·재시작·시연 절차](docs/DEPLOY.md)
-
-## 테스트
-
-```powershell
-.\scripts\dev.ps1 test
-python -m unittest discover -s agents -v
-node --check src/main/resources/static/app.js
-node --check src/main/resources/static/routes.js
-python scripts/smoke_workers.py
-```
-
-실제 HTTP를 통한 구독·시연·재조회·중복 방지·사용자 격리·오류 차단과 worker 도구 호출 프로토콜을 검증합니다. OpenAI 프로토콜 테스트는 모의 응답을 사용하므로 실제 유료 API 연결 성공을 의미하지 않습니다.
-
-## 주의할 표현
-
-경로 회피 조건은 내 검색에만 적용되며 공식 장애 제보가 아닙니다. TMAP이 반환한 후보에서만 대안을 비교합니다. 시간표/예상 시간은 실제 운행 보장이 아닙니다. 서울시 관측은 **지연 의심**이며 공식 장애 확정이 아닙니다. 키 미설정 상태를 실시간 운행 데이터나 실제 LLM 분석으로 표시하지 않습니다.
+`agents/`, `scripts/deploy_daytona.py`, `scripts/sandbox_runner.py`, `scripts/smoke_workers.py`는 이전 샌드박스 구조의 참고 자료입니다. 현재 서비스 실행·배포에 사용하지 않습니다. Daytona는 추후 별도 기능을 위해 보류합니다.

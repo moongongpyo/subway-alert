@@ -6,7 +6,7 @@ import {apiConnectionCard} from './api-connection.js';
 const $=s=>document.querySelector(s);let current=null,stream=null,connected=true,config=null;
 const terminal=new Set(['FAILED','CANCELLED','EXPIRED','UNSUPPORTED']);
 const stepNames={pending:'대기',running:'진행 중',waiting_input:'입력 필요',repairing:'수정 중',completed:'완료',failed:'실패',cancelled:'취소'};
-async function api(path,options={}){const r=await fetch(path,{...options,headers:{'Content-Type':'application/json','X-Playground-Request':'1',...options.headers}});const data=await r.json();if(!r.ok)throw new Error(data.error||'요청에 실패했습니다.');return data;}
+async function api(path,options={}){const r=await fetch(path,{...options,headers:{'Content-Type':'application/json','X-Playground-Request':'1',...options.headers}});const data=await r.json();if(!r.ok)throw Object.assign(new Error(data.error||'요청에 실패했습니다.'),{code:data.code});return data;}
 const workflow=new Workflow();
 const workflowHeader=el('section',{id:'workflow-header',hidden:''}),linkReview=el('section',{id:'link-review',hidden:''}),workflowFooter=el('nav',{id:'workflow-footer','aria-label':'단계 이동',hidden:''});
 $('#job-section').before(workflowHeader,linkReview);$('#evaluation-section').after(workflowFooter);
@@ -57,12 +57,40 @@ function clearError(){$('#form-error').hidden=true;}
 $('#settings-button').onclick=()=>$('#settings').showModal();$('#close-settings').onclick=()=>$('#settings').close();
 document.querySelectorAll('a.brand').forEach(a=>a.onclick=e=>{e.preventDefault();startNew();});
 document.querySelectorAll('[data-url]').forEach(button=>button.onclick=()=>{$('#url').value=button.dataset.url;$('#url').focus();$('#launch-form').scrollIntoView({behavior:'smooth',block:'center'});});
+const preparingStates=new Set(['ANALYZING','PREPARING','VERIFYING','WAITING_FOR_USER']);
+const activeJobDialog=el('dialog',{class:'active-job-dialog','aria-labelledby':'active-job-title'});document.body.append(activeJobDialog);
+async function submitLaunch(request){
+  const job=await api('/api/jobs',{method:'POST',headers:{'Idempotency-Key':request.id},body:JSON.stringify({url:request.url})});
+  sessionStorage.removeItem('submission');openJob(job);
+}
+async function resolveActiveJob(request){
+  const jobs=await api('/api/jobs');
+  const active=jobs.find(j=>!j.taskType&&preparingStates.has(j.state));
+  if(!active){await submitLaunch(request);return;}
+  const message=el('p',{class:'error-text',role:'alert'});
+  const keep=el('button',{class:'secondary',text:'계속 준비하기',onclick:()=>activeJobDialog.close()});
+  const stop=el('button',{class:'primary',text:'중지하고 새 체험 시작'});
+  const view=el('button',{class:'text-button',text:'진행 중인 작업 보기',onclick:async()=>{try{openJob(await api(`/api/jobs/${active.id}`));activeJobDialog.close();}catch(e){message.textContent=e.message;}}});
+  stop.onclick=async()=>{
+    stop.disabled=keep.disabled=view.disabled=true;stop.textContent='기존 작업 중지 중…';
+    const prevent=e=>e.preventDefault();activeJobDialog.addEventListener('cancel',prevent);
+    try{
+      const latest=await api(`/api/jobs/${active.id}`);
+      if(preparingStates.has(latest.state))await api(`/api/jobs/${active.id}/cancel`,{method:'POST'});
+      stop.textContent='새 체험 시작 중…';await submitLaunch(request);activeJobDialog.close();
+    }catch(e){message.textContent=e.message;}
+    finally{stop.disabled=keep.disabled=view.disabled=false;stop.textContent='중지하고 새 체험 시작';activeJobDialog.removeEventListener('cancel',prevent);}
+  };
+  activeJobDialog.replaceChildren(el('h2',{id:'active-job-title',text:'준비 중인 작업을 중지하시겠습니까?'}),el('p',{text:projectTitle(active)}),el('p',{class:'data-note',text:active.url}),el('p',{text:'기존 작업을 중지한 뒤 아래 URL로 새 체험을 시작합니다. 기존 실행 기록은 유지됩니다.'}),el('p',{class:'data-note',text:request.url}),message,el('div',{class:'active-job-actions'},keep,stop),view);
+  activeJobDialog.showModal();keep.focus();
+}
 $('#launch-form').onsubmit=async event=>{
   event.preventDefault();clearError();$('#start-button').disabled=true;
-  const url=$('#url').value.trim();const pending=JSON.parse(sessionStorage.getItem('submission')||'null');
+  const url=$('#url').value.trim(),pending=JSON.parse(sessionStorage.getItem('submission')||'null');
   const request=pending?.url===url?pending:{url,id:crypto.randomUUID()};sessionStorage.setItem('submission',JSON.stringify(request));
-  try{const j=await api('/api/jobs',{method:'POST',headers:{'Idempotency-Key':request.id},body:JSON.stringify({url})});sessionStorage.removeItem('submission');openJob(j);}
-  catch(e){error(e.message);$('#start-button').disabled=false;}
+  try{await submitLaunch(request);}
+  catch(e){try{if(e.code==='ACTIVE_JOB')await resolveActiveJob(request);else error(e.message);}catch(problem){error(problem.message);}}
+  finally{if(!current)$('#start-button').disabled=false;}
 };
 function openJob(job){
   stream?.close();current=job;workflow.sync(job);localStorage.setItem('currentJob',job.id);history.replaceState(null,'','#'+job.id);renderJob(job);

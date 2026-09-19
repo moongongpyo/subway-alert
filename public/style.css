@@ -126,3 +126,5 @@ dialog{border:1px solid var(--line);border-radius:14px;padding:28px;width:min(46
 
 /* Keep all seven preparation stages readable in the side panel. */
 @media(max-width:700px){.steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px 8px}.step-label{font-size:12px}}
+
+.active-job-dialog{position:fixed;inset:24px 24px auto auto;margin:0;width:min(420px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;padding:26px;border:1px solid var(--line);border-radius:14px;background:var(--bg);color:inherit;box-shadow:0 18px 60px #0002}.active-job-dialog::backdrop{background:#0003}.active-job-dialog h2{font-size:20px;line-height:1.5}.active-job-dialog p{line-height:1.7;overflow-wrap:anywhere}.active-job-actions{display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 12px}@media(max-width:600px){.active-job-dialog{inset:16px 16px auto auto;padding:20px}}

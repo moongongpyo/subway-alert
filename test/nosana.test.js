@@ -33,6 +33,41 @@ test('all small/standard/escalated roles route to the deployed model',async t=>{
   for(const options of [{small:true},{},{escalate:true}])await models.ask(job.id,'D','Build',{},Classification,options);
   assert.deepEqual(requested,[NOSANA_MODEL,NOSANA_MODEL,NOSANA_MODEL]);
 });
+
+test('native fetch failure during a repair retries the same prompt once and retains unknown usage',async t=>{
+  const bodies=[];const {models,store,job}=fixture(t,async(_u,o)=>{
+    bodies.push(o.body);
+    if(bodies.length===1)throw new TypeError('fetch failed',{cause:Object.assign(new Error('private endpoint details'),{code:'ECONNRESET'})});
+    return success();
+  });
+  store.update(job.id,j=>{j.round=1;});
+  await models.ask(job.id,'A','Repair the failed adapter',{error:"invalid literal for int(): M"},Classification);
+  assert.equal(bodies.length,2);assert.equal(bodies[0],bodies[1]);
+  assert.deepEqual(store.db.prepare('SELECT status,round FROM requests WHERE job=? ORDER BY rowid').all(job.id).map(r=>({...r})),[{status:'unknown',round:1},{status:'settled',round:1}]);
+  assert.match(store.get(job.id).logs.at(-1).text,/1회 재시도/);assert.equal(store.get(job.id).round,1);
+});
+
+test('connection failure while reading the response also recovers; persistent failures stop after two calls',async t=>{
+  let calls=0;const {models,store,job}=fixture(t,async()=>{
+    if(++calls===1)return new Response(new ReadableStream({start(controller){controller.error(new TypeError('terminated',{cause:{code:'UND_ERR_SOCKET'}}));}}));
+    return success();
+  });
+  await models.ask(job.id,'B','Verify',{},Classification);assert.equal(calls,2);
+  store.update(job.id,j=>{j.state='CANCELLED';});
+  const next=store.create('local','https://example.com','persistent-failure');calls=0;
+  models.client.fetcher=async()=>{calls++;throw new TypeError('fetch failed',{cause:{code:'ETIMEDOUT',message:'secret-host/token'}});};
+  await assert.rejects(models.ask(next.id,'A','Repair',{},Classification),e=>e.code==='NOSANA_CONNECTION'&&e.status===503&&e.message.includes('ETIMEDOUT')&&!e.message.includes('secret-host'));
+  assert.equal(calls,2);assert.equal(store.usage(next.id).calls,2);
+});
+
+test('Nosana distinguishes caller cancellation from its deadline and never retries cancellation',async t=>{
+  const control=new AbortController(),reason=new Error('user cancelled');let calls=0;
+  const {models,job}=fixture(t,async()=>{calls++;control.abort(reason);throw reason;});
+  await assert.rejects(models.ask(job.id,'A','Analyze',{},Classification,{signal:control.signal}),e=>e===reason);
+  assert.equal(calls,1);
+  models.client.fetcher=async(_u,o)=>{await new Promise(resolve=>{o.signal.addEventListener('abort',resolve,{once:true});setTimeout(resolve,20);});o.signal.throwIfAborted();};
+  await assert.rejects(models.client.request('/api/tags',null,{timeout:1}),{code:'NOSANA_TIMEOUT',status:408});
+});
 test('Nosana retains retry and token limits without silently calling OpenAI',async t=>{
   let calls=0;const {models,store,job}=fixture(t,async()=>++calls===1?new Response('',{status:503}):success());
   await models.ask(job.id,'B','Verify',{},Classification);assert.equal(calls,2);assert.equal(store.usage(job.id).calls,2);

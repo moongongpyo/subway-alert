@@ -10,6 +10,8 @@ import { apiEvidence } from './api-evidence.js';
 
 const noRepair=new Set(['BUDGET_EXCEEDED','TIME_LIMIT_EXCEEDED','NO_PROGRESS','CONFIG_REQUIRED','UNSUPPORTED','STOPPED','UNKNOWN_PRICE','UNKNOWN_TOKENS','PRICE_REVIEW_REQUIRED','METERING_MISMATCH','INFRA_BUDGET','BROWSER_INSTALL_FAILED','BROWSER_UNREACHABLE','BROWSER_RUNNER_FAILED','PREVIEW_FAILED','EXTERNAL_UNREACHABLE','NETWORK_POLICY_REQUIRED','EXTERNAL_PRICING_REQUIRED','EXTERNAL_BUDGET_REQUIRED','EXTERNAL_CALL_LIMIT','HTTP_AUTH_CONFIRMATION_REQUIRED']);
 const invalidProposal=e=>['INVALID_PLAN','MODEL_INCOMPLETE'].includes(e.code)||e.name==='ZodError'||e instanceof SyntaxError;
+// The client has already exhausted its bounded transport retry; changing project code cannot fix it.
+for(const code of ['NOSANA_CONNECTION','NOSANA_TIMEOUT','NOSANA_EXPIRED'])noRepair.add(code);
 export class Orchestrator {
   constructor(store,models,sandboxes,dir='data',{collectSource=collect}={}) {this.store=store;this.models=models;this.sandboxes=sandboxes;this.dir=dir;this.collectSource=collectSource;this.running=new Map();this.waiters=new Map();}
   log(id,text){this.store.update(id,j=>{j.message=text;});}

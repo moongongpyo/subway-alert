@@ -9,6 +9,17 @@ test('duplicate submission returns one job; another active submission is blocked
 test('two connections cannot spend the same remaining cost reservation',t=>{const{s,job,path}=fixture(t);s.update(job.id,j=>j.policy.jobMicros=70_000);const second=new Store(path);try{s.reserve(job.id,'A','gpt-5.6-terra',4000,4000);assert.throws(()=>second.reserve(job.id,'D','gpt-5.6-terra',4000,4000),{code:'BUDGET_EXCEEDED'});assert.equal(s.usage(job.id).calls,1);}finally{second.close();}});
 test('unknown usage stays reserved and settlement is idempotent',t=>{const{s,job}=fixture(t);const r=s.reserve(job.id,'A','gpt-5.6-terra',4000,4000);s.settle(r.id,null);assert.equal(s.usage(job.id).reserved,r.micros);s.settle(r.id,{input_tokens:200,output_tokens:300});const amount=s.usage(job.id).micros;s.settle(r.id,{input_tokens:1,output_tokens:1});assert.equal(s.usage(job.id).micros,amount);assert.equal(s.usage(job.id).reserved,0);});
 test('unknown provider calls also occupy concurrency slots',t=>{const{s,job}=fixture(t);for(let n=0;n<2;n++){const r=s.reserve(job.id,'A','gpt-5.6-luna',100,100);s.settle(r.id,null);}assert.throws(()=>s.reserve(job.id,'D','gpt-5.6-luna',100,100),{code:'CONCURRENCY_LIMIT'});});
+test('terminated jobs retain unknown costs without permanently consuming live concurrency',t=>{
+  const {s,job}=fixture(t);
+  for(let i=0;i<2;i++){const r=s.reserve(job.id,'A','gpt-5.6-luna',100,100);s.settle(r.id,null);}
+  const reserved=s.usage(job.id).reserved;assert.ok(reserved>0);
+  s.update(job.id,j=>{j.state='FAILED';});
+  const next=s.create('local','https://example.com','after-disconnect');
+  s.reserve(next.id,'A','gpt-5.6-luna',100,100);s.reserve(next.id,'B','gpt-5.6-luna',100,100);
+  assert.equal(s.usage(job.id).reserved,reserved);
+  assert.equal(s.db.prepare("SELECT COUNT(*) n FROM requests WHERE job=? AND status='unknown'").get(job.id).n,2);
+  assert.throws(()=>s.reserve(next.id,'D','gpt-5.6-luna',100,100),{code:'CONCURRENCY_LIMIT'});
+});
 test('role and global request caps include unsuccessful attempts',t=>{const{s,job}=fixture(t);for(let n=0;n<job.policy.roleCalls;n++){const r=s.reserve(job.id,'A','gpt-5.6-luna',10,10);s.settle(r.id,{input_tokens:10,output_tokens:10});}assert.throws(()=>s.reserve(job.id,'A','gpt-5.6-luna',10,10),{code:'BUDGET_EXCEEDED'});});
 test('daily ledger spans different jobs and owners',t=>{const{s,job}=fixture(t);s.update(job.id,j=>j.policy.userDayMicros=1000);const r=s.reserve(job.id,'A','gpt-5.6-luna',1000,100);s.settle(r.id,null);s.update(job.id,j=>j.state='FAILED');const next=s.create('local','https://example.com','new-request',{userDayMicros:400});assert.throws(()=>s.reserve(next.id,'A','gpt-5.6-luna',1000,100),{code:'BUDGET_EXCEEDED'});});
 test('repair count persists, repeated unchanged failure stops and Sol cannot escape its round',t=>{const{s,job,path}=fixture(t);s.update(job.id,j=>j.policy.repairs=2);s.repair(job.id,'error-1');assert.throws(()=>s.repair(job.id,'error-1'),{code:'NO_PROGRESS'});const r=s.reserve(job.id,'A','gpt-5.6-sol',100,100);s.settle(r.id,{input_tokens:100,output_tokens:100});s.repair(job.id,'changed-code');assert.throws(()=>s.reserve(job.id,'D','gpt-5.6-sol',100,100),{code:'BUDGET_EXCEEDED'});assert.throws(()=>s.repair(job.id,'third-error'),{code:'BUDGET_EXCEEDED'});const second=new Store(path);assert.equal(second.get(job.id).round,2);assert.equal(second.usage(job.id).calls,1);second.close();});

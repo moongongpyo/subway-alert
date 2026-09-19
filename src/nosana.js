@@ -1,4 +1,4 @@
-import { fail } from './config.js';
+import { AppError, fail } from './config.js';
 
 export const NOSANA_MODEL = 'qwen3.6:35b-a3b-q8_0';
 
@@ -27,16 +27,30 @@ export class NosanaClient {
     if(!Number.isFinite(this.expiresAt))fail('CONFIG_REQUIRED','Nosana 배포 종료 시간을 설정해주세요.',503);
     if(Date.now()>=this.expiresAt)fail('NOSANA_EXPIRED','Nosana 배포 시간이 끝났습니다. 배포를 다시 시작하거나 OpenAI 복구 설정으로 전환해주세요.',503);
   }
+  transportFailure(error,signal,deadline){
+    // Cancellation and expiry must never trigger another paid/model operation.
+    if(signal?.aborted)throw signal.reason||error;
+    this.assertAvailable();
+    if(error instanceof AppError)throw error;
+    if(deadline.aborted)fail('NOSANA_TIMEOUT','Nosana 모델 응답 제한 시간을 넘었습니다. 모델 연결 상태를 확인해주세요.',408);
+    // Do not expose native error messages: they may include endpoint URLs or credentials.
+    const nativeCode=error?.cause?.code||error?.code;
+    const code=['ECONNRESET','ECONNREFUSED','ETIMEDOUT','ENOTFOUND','EAI_AGAIN','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET'].includes(nativeCode)?nativeCode:'NETWORK_ERROR';
+    fail('NOSANA_CONNECTION',`Nosana 모델 서버와의 연결이 끊겼습니다 (${code}). 실행 코드 오류와는 별개의 모델 연결 문제입니다.`,503);
+  }
   async request(path,body,{signal,timeout=90_000,binary=false,maxBytes=4_000_000}={}){
     this.assertAvailable();
     const deadline=AbortSignal.timeout(Math.max(1,Math.min(timeout,this.expiresAt-Date.now())));
-    const response=await this.fetcher(this.baseURL+path,{method:body?'POST':'GET',redirect:'error',
+    let response;
+    try{response=await this.fetcher(this.baseURL+path,{method:body?'POST':'GET',redirect:'error',
       headers:{'Content-Type':'application/json',...(this.token?{Authorization:'Bearer '+this.token}:{})},
-      body:body?JSON.stringify(body):undefined,signal:signal?AbortSignal.any([signal,deadline]):deadline});
+      body:body?JSON.stringify(body):undefined,signal:signal?AbortSignal.any([signal,deadline]):deadline});}
+    catch(error){this.transportFailure(error,signal,deadline);}
     if(!response.ok){await response.body?.cancel();fail('NOSANA_CONNECTION',`Nosana 모델 서버가 HTTP ${response.status}를 반환했습니다. 배포 상태를 확인해주세요.`,response.status);}
     const reader=response.body.getReader();let bytes=0;const parts=[];
     try{for(;;){const {value,done}=await reader.read();if(done)break;bytes+=value.length;if(bytes>maxBytes)fail('MODEL_INCOMPLETE','모델 응답 크기 제한을 초과했습니다.');parts.push(Buffer.from(value));}}
-    finally{await reader.cancel();}
+    catch(error){this.transportFailure(error,signal,deadline);}
+    finally{await reader.cancel().catch(()=>{});}
     if(binary)return Buffer.concat(parts);
     try{return JSON.parse(Buffer.concat(parts).toString());}catch{fail('MODEL_INCOMPLETE','Nosana에서 유효한 JSON 응답을 받지 못했습니다.');}
   }

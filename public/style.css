@@ -123,3 +123,6 @@ dialog{border:1px solid var(--line);border-radius:14px;padding:28px;width:min(46
 .custom-experiment summary,.alternative-options summary{cursor:pointer;font-weight:600}.alternative-options{margin-top:20px}
 .experiment-form .optional-fields[open]{margin-bottom:24px}.experiment-form .optional-fields[open] .form-field{margin-top:18px}
 @media(max-width:900px){.suggestion-grid{grid-template-columns:1fr}.suggestion-grid .evaluation-card{padding:20px}}
+
+/* Keep all seven preparation stages readable in the side panel. */
+@media(max-width:700px){.steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px 8px}.step-label{font-size:12px}}

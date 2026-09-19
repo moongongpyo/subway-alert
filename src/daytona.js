@@ -68,7 +68,7 @@ export class Sandboxes {
     await (await this.sandbox(id)).fs.uploadFile(Buffer.from(content),name,30);
     this.store.assertActive(this.store.get(id));
   }
-  async boot(id,viewer) {
+  async boot(id,viewer,onEnvironmentReady=()=>{}) {
     let j=this.store.get(id);const root=j.root,p=j.plan;
     if(p.kind==='github'&&!j.cloned){
       await this.command(id,`git init project && cd project && git remote add origin ${quote('https://github.com/'+j.source.repo+'.git')} && git fetch --depth 1 origin ${quote(j.source.commit)} && git checkout --detach FETCH_HEAD`);
@@ -88,6 +88,7 @@ export class Sandboxes {
     j=this.store.get(id);
     const runtimeConfig={plan:p,viewer,controlToken:j.controlToken,project,version:j.version,databaseUrl:j.databaseUrl,networkMode:j.networkMode,external:j.policy.external,userRequests:j.policy.userRequests,callLimit:j.apiAccess?.callLimit,allowHttpAuth:j.apiAccess?.allowHttpAuth===true,requestMicros:j.requestMicros===null?null:j.requestMicros||0,externalMicros:j.policy.externalMicros,expiresAt:j.createdAt+j.policy.sandboxMinutes*60_000};
     await this.upload(id,root+'/system/config.json',JSON.stringify(runtimeConfig));
+    onEnvironmentReady();
     await this.start(id,'gateway',`cd ${quote(root+'/system')} && exec node runtime.mjs`);
     if(p.hasUI)await this.start(id,'application',`cd ${quote(project)} && ${p.start}`,j.databaseUrl?{DATABASE_URL:j.databaseUrl}:{});
     this.store.count(id,'tools');

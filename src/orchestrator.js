@@ -16,7 +16,7 @@ export class Orchestrator {
   constructor(store,models,sandboxes,dir='data',{collectSource=collect}={}) {this.store=store;this.models=models;this.sandboxes=sandboxes;this.dir=dir;this.collectSource=collectSource;this.running=new Map();this.waiters=new Map();}
   log(id,text){this.store.update(id,j=>{j.message=text;});}
   failure(id,error){this.store.update(id,j=>{const record={at:Date.now(),version:j.version,code:error.code||'EXECUTION_FAILED',message:redact(String(error.message),[this.store.secret(id),process.env.OPENAI_API_KEY,process.env.DAYTONA_API_KEY,j.controlToken,j.previewToken,j.databaseUrl]).slice(0,1800)};j.failures=[...(j.failures||[]),record].slice(-10);});}
-  step(id,step,status,evidence=null){this.store.update(id,j=>{const s=j.steps.find(s=>s.id===step);if(s){s.status=status;s.evidence=evidence;}});}
+  step(id,step,status,evidence=null){step=({credentials:'environment',database:'environment',interface:'environment'})[step]||step;this.store.update(id,j=>{const s=j.steps.find(s=>s.id===step);if(s){s.status=status;s.evidence=evidence;}});}
   start(id){if(this.running.has(id))return;const c=new AbortController();this.running.set(id,c);this.run(id,c.signal).finally(()=>this.running.delete(id));}
   async run(id,signal) {
     try {
@@ -121,12 +121,14 @@ export class Orchestrator {
       this.store.update(id,x=>{x.viewer=viewer;});
     }
     if(p.database.kind!=='none')this.step(id,'database','running');
-    this.step(id,'execution','running');this.log(id,'필요한 패키지를 설치하고 실행 환경을 준비하고 있어요');
-    await this.sandboxes.boot(id,this.store.get(id).viewer);
+    this.log(id,'필요한 패키지를 설치하고 실행 환경을 준비하고 있어요');
+    await this.sandboxes.boot(id,this.store.get(id).viewer,()=>{
+      this.step(id,'environment','completed','의존성·런타임·필요한 DB 준비 완료');
+      this.step(id,'execution','running');this.log(id,'서버를 실행하고 응답을 확인하고 있어요');
+    });
     this.step(id,'environment','completed','Daytona 샌드박스 생성 및 런타임 설치');
     this.step(id,'execution','completed','실행 버전 health 확인');
-    this.step(id,'database','completed','마이그레이션·시드·DB 쿼리 통과');
-    this.step(id,'interface','completed','공통 UI와 입력 계약 연결');
+
     if(!p.hasUI){try{validateInput(p.fields,this.store.get(id).sample);}catch{await this.waitForKey(id,'검증에 사용할 필수 입력을 채워주세요.','sample');}}
     if(p.auth.kind!=='none'){
       if(!this.store.secret(id)){
@@ -137,6 +139,9 @@ export class Orchestrator {
     this.store.update(id,x=>{x.state='VERIFYING';x.message='실제 입력으로 기능을 확인하고 있어요';});
     this.step(id,'function','running');
     j=this.store.get(id);
+    if(!p.hasUI)validateInput(p.fields,j.sample);
+    this.step(id,'function','completed',`${p.capability} · ${p.expected}`);
+    this.step(id,'testing','running');
     if(!p.hasUI){
       const sample=validateInput(p.fields,j.sample);
       let result=await this.sandboxes.invoke(id,sample);
@@ -157,11 +162,13 @@ export class Orchestrator {
       await response.body?.cancel();
       this.store.update(id,x=>{x.evidence.push({role:'B',version:x.version,at:Date.now(),description:'원본 앱 HTTP 응답 및 DB 확인. 실제 기능은 브라우저 시나리오로 검증.'});});
     }
-    this.step(id,'credentials','completed','실제 인증 호출 통과');this.step(id,'function','completed','대표 입력의 실제 응답 확인');
+
     this.evaluations?.prefetch?.warmJob(id);
-    this.step(id,'browser','running');this.log(id,'브라우저에서 입력과 버튼, 결과 화면을 확인하고 있어요');
+    this.log(id,'대표 입력으로 기능을 테스트하고 있어요');
     const evidence=await this.verifyBrowser(id,signal);
     if(evidence.passed!==true||evidence.version!==this.store.get(id).version)fail('BROWSER_FAILED','브라우저 검증의 성공 여부 또는 버전이 맞지 않습니다.');
+    this.step(id,'testing','completed','대표 입력·조작 및 결과 검증 통과');
+    this.step(id,'browser','running');this.log(id,'검증된 화면의 외부 접속과 공개 파일을 확인하고 있어요');
     const publicEvidence=await this.sandboxes.verifyPreview(id);
     const directory=join(this.dir,'evidence');await mkdir(directory,{recursive:true});await writeFile(join(directory,id+'.png'),evidence.image);
     const {image,...details}=evidence;
@@ -184,13 +191,13 @@ export class Orchestrator {
         if(attempt===1)fail('BROWSER_TEST_FAILED','브라우저 시나리오를 수정했지만 검증에 실패했습니다. 앱 또는 테스트를 확인해야 합니다. 설치는 반복하지 않습니다. '+error.message);
         this.store.repair(id,hash({scope:'browser',version:j.version,actions,error:error.message}));
         feedback=redact({scenario:actions,error:error.message},[this.store.secret(id),j.controlToken,j.previewToken,j.databaseUrl,process.env.OPENAI_API_KEY,process.env.DAYTONA_API_KEY]);
-        this.step(id,'browser','repairing');
+        this.step(id,'testing','repairing');
         this.log(id,'브라우저 테스트를 수정하고 있어요. 설치된 앱은 유지하고 화면 검증만 다시 실행합니다.');
       }
     }
   }
   async waitForKey(id,message='API 키 입력이 필요해요',kind='credentials'){
-    this.store.update(id,j=>{j.state='WAITING_FOR_USER';j.waitKind=kind;j.waitSequence=(j.waitSequence||0)+1;j.waitUntil=Math.min(Date.now()+j.policy.waitingMs,j.createdAt+j.policy.waitingMs+j.policy.activeMs);j.activeSpent+=j.activeSince?Date.now()-j.activeSince:0;j.activeSince=null;j.message=message;const s=j.steps.find(s=>s.id===(kind==='sample'?'function':'credentials'));if(s)s.status='waiting_input';});
+    this.store.update(id,j=>{j.state='WAITING_FOR_USER';j.waitKind=kind;j.waitSequence=(j.waitSequence||0)+1;j.waitUntil=Math.min(Date.now()+j.policy.waitingMs,j.createdAt+j.policy.waitingMs+j.policy.activeMs);j.activeSpent+=j.activeSince?Date.now()-j.activeSince:0;j.activeSince=null;j.message=message;const s=j.steps.find(s=>s.id===(kind==='sample'?'function':'environment'));if(s)s.status='waiting_input';});
     await new Promise((resolve,reject)=>this.waiters.set(id,{resolve,reject}));
     this.store.update(id,j=>{if(TERMINAL.has(j.state))fail('STOPPED','중단된 작업입니다.');j.state='PREPARING';j.activeSince=Date.now();j.waitUntil=null;j.waitKind=null;});
   }

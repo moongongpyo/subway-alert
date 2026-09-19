@@ -190,3 +190,15 @@ test('a late repair response cannot revive a cancelled job',async t=>{
   await f.orchestrator.run(f.j.id,new AbortController().signal);
   assert.equal(f.store.get(f.j.id).state,'CANCELLED');assert.equal(boots,1);assert.ok(!f.calls.includes('ready'));
 });
+
+test('seven preparation stages complete only with functional and public preview evidence',async t=>{
+  const f=setup(t);await f.orchestrator.run(f.j.id,new AbortController().signal);
+  const steps=f.store.get(f.j.id).steps;
+  assert.deepEqual(steps.map(s=>s.label),['URL 분석','환경 준비','서버 실행','기능 확인','기능 테스트','화면 확인','체험 준비 완료']);
+  assert.ok(steps.every(s=>s.status==='completed'));
+});
+test('public preview failure keeps functional test passed but screen check and ready incomplete',async t=>{
+  const f=setup(t,true);await f.orchestrator.run(f.j.id,new AbortController().signal);
+  const stages=Object.fromEntries(f.store.get(f.j.id).steps.map(s=>[s.id,s.status]));
+  assert.equal(stages.testing,'completed');assert.equal(stages.browser,'failed');assert.equal(stages.ready,'cancelled');
+});

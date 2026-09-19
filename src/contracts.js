@@ -62,11 +62,7 @@ export function validatePlan(p, source) {
   return p;
 }
 export function stepsFor(p) {
-  const steps=[['analysis','URL 분석','A'],['environment','환경 준비','F']];
-  if(p.auth.kind!=='none') steps.push(['credentials','인증 연결','C']);
-  if(p.database.kind!=='none') steps.push(['database','DB 준비','F']);
-  if(!p.hasUI) steps.push(['interface','화면 구성','D']);
-  steps.push(['execution','실행','A'],['function','기능 확인','B'],['browser','화면 확인','E'],['ready','체험 준비 완료','']);
+  const steps=[['analysis','URL 분석','A'],['environment','환경 준비','F'],['execution','서버 실행','A'],['function','기능 확인','B'],['testing','기능 테스트','E'],['browser','화면 확인','E'],['ready','체험 준비 완료','']];
   return steps.map(([id,label,role])=>({id,label,role,status:id==='analysis'?'completed':'pending',evidence:id==='analysis'?'실행 계획 검증 완료':null}));
 }
 export function validateInput(fields, input) {

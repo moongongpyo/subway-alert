@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fail, PREPARING, TERMINAL } from './config.js';
+import { fail, PREPARING, TERMINAL, PRICES } from './config.js';
 import { redact } from './store.js';
 import { validateInput } from './contracts.js';
 import { validateURL, safeRequest } from './network.js';
@@ -24,7 +24,7 @@ export class Evaluations {
   snapshot(id,owner){
     const e=this.get(id,owner),all=records(this.db,id),jobs=this.jobs(id),usage=this.db.prepare('SELECT * FROM requests WHERE evaluation=?').all(id);
     const runs=all.filter(r=>r.type==='run').map(r=>{const feedback=latestFeedback(this.db,id,r.id),goal=e.goals.find(g=>g.version===r.goalVersion);return {...r,feedback,assessment:assess(goal,r,feedback)};});
-    return this.clean({...e,owner:undefined,runs,experiments:all.filter(r=>r.type==='experiment'),suggestions:all.filter(r=>r.type==='suggestion'),transitions:all.filter(r=>r.type==='transition'),analyses:all.filter(r=>r.type==='analysis').map(({presentation,design,...r})=>({...r,hasPresentation:!!presentation})),reports:all.filter(r=>r.type==='report').map(({markdown,...r})=>r),jobs:jobs.map(j=>({id:j.id,title:j.projectName||j.plan?.title||j.url,url:j.url,state:j.state,version:j.version,hasUI:j.plan?.hasUI,capability:j.plan?.capability,expiresAt:j.expiresAt,createdAt:j.createdAt,usage:this.store.usage(j.id),transitionId:j.transitionId})),usage:{micros:usage.reduce((s,r)=>s+r.micros,0),reserved:usage.filter(r=>r.status!=='settled').reduce((s,r)=>s+r.micros,0),calls:usage.length},formats:['md']},id);
+    return this.clean({...e,owner:undefined,runs,experiments:all.filter(r=>r.type==='experiment'),suggestions:all.filter(r=>r.type==='suggestion'),transitions:all.filter(r=>r.type==='transition'),analyses:all.filter(r=>r.type==='analysis').map(({presentation,design,...r})=>({...r,hasPresentation:!!presentation})),reports:all.filter(r=>r.type==='report').map(({markdown,...r})=>r),jobs:jobs.map(j=>({id:j.id,title:j.projectName||j.plan?.title||j.url,url:j.url,state:j.state,version:j.version,hasUI:j.plan?.hasUI,capability:j.plan?.capability,expiresAt:j.expiresAt,createdAt:j.createdAt,usage:this.store.usage(j.id),transitionId:j.transitionId})),usage:{rentalCalls:usage.filter(r=>PRICES[r.model]?.billing==='gpu-hour').length,micros:usage.reduce((s,r)=>s+r.micros,0),reserved:usage.filter(r=>r.status!=='settled').reduce((s,r)=>s+r.micros,0),calls:usage.length},formats:['md']},id);
   }
   goal(eid,owner,body){return this.store.tx(()=>{const e=this.get(eid,owner),g=GoalInput.parse(body);if(g.version!==e.goals.length)fail('CONFLICT','목적이 변경됐습니다. 새로고침해주세요.',409);
     const conditions=g.conditions.map(c=>{if(c.kind!=='subjective'&&c.pointer!==''&&!c.pointer.startsWith('/'))fail('INVALID_CONDITION','JSON Pointer는 /로 시작해야 합니다.');let expected;try{expected=JSON.parse(c.expectedJson);}catch{fail('INVALID_CONDITION','기대 값은 JSON 형식이어야 합니다.');}if(c.kind==='contains'&&typeof expected!=='string')fail('INVALID_CONDITION','포함 검사는 문자열 기대 값이 필요합니다.');return {...c,id:randomUUID(),expectedJson:JSON.stringify(expected)};});

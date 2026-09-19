@@ -138,7 +138,7 @@ export class Store {
   }
   usage(id) {
     const rows = this.db.prepare('SELECT * FROM requests WHERE job=?').all(id);
-    return { calls: rows.length, input: rows.reduce((s,r)=>s+r.input,0), output: rows.reduce((s,r)=>s+r.output,0),
+    return { calls: rows.length, rentalCalls:rows.filter(r=>PRICES[r.model]?.billing==='gpu-hour').length, input: rows.reduce((s,r)=>s+r.input,0), output: rows.reduce((s,r)=>s+r.output,0),
       micros: rows.reduce((s,r)=>s+r.micros,0), reserved: rows.filter(r=>r.status!=='settled').reduce((s,r)=>s+r.micros,0),
       roles: Object.fromEntries('ABCDEF'.split('').map(role=>[role,rows.filter(r=>r.role===role).length])) };
   }
@@ -179,6 +179,7 @@ export class Store {
 }
 export const hash = value => createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value)).digest('hex');
 export function redact(value, secrets = []) {
+  secrets=[...secrets,process.env.NOSANA_INFERENCE_TOKEN,process.env.NOSANA_IMAGE_TOKEN,process.env.NOSANA_API_KEY];
   const walk = (x) => {
     if (typeof x === 'string') { let s=x; for(const v of secrets.filter(Boolean)) s=s.split(v).join('[숨김]'); return s.replace(/(Bearer\s+)[\w.\-]+/gi,'$1[숨김]').replace(/sk-[\w-]{16,}/g,'[숨김]'); }
     if(Array.isArray(x)) return x.map(walk);

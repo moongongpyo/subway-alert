@@ -25,6 +25,8 @@ npm.cmd run test:docs-browser # 설치한 Chromium으로 문서 탭·iframe·요
 ```
 
 개발 중 자동 재시작은 `npm.cmd run dev`입니다. 준비 중 재시작하면 해당 작업은 중단하고 자원을 정리합니다. 호출을 자동 재생하지 않으며 이전 예산 원장은 보존됩니다.
+
+Nosana 직접 배포 모델을 사용할 때는 [Nosana 연결·비용 제한·OpenAI 복구 안내](docs/nosana.md)를 참고하세요. 기존 에이전트 프롬프트는 공통으로 사용하며 `MODEL_PROVIDER`로 연결만 전환합니다.
 [
 ## 구현된 흐름
 

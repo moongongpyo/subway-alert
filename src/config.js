@@ -12,6 +12,9 @@ export const POLICY = Object.freeze({
 // USD per million tokens = micro-USD per token. Reserve cache-write worst case.
 // Official model pages checked 2026-09-19; stop automatically after review expiry.
 export const PRICES = Object.freeze({
+  // Dedicated GPU rental is billed by wall time, not tokens. Display separately.
+  'qwen3.6:35b-a3b-q8_0': { input: 0, output: 0, billing: 'gpu-hour' },
+  'nosana-sdxl': { input: 0, output: 0, billing: 'gpu-hour' },
   'gpt-5.6-luna': { input: .25, output: 1.2 },
   'gpt-5.6-terra': { input: 2.5, output: 12 },
   'gpt-5.6-sol': { input: 5, output: 20 },

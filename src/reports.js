@@ -36,7 +36,7 @@ export function comparisonReport(snapshot,recipes=[],notes=[]) {
   }
   parts.push('## 설치·인증·검증 과정',...s.jobs.map(j=>`- ${line(j.title)}: ${line(j.state)}, 버전 ${line(j.version)}, 준비 작업 ${j.id}. 세부 명령·인증 방식은 아래 레시피 참조.`),
     '## 대안 선택의 근거',...s.transitions.map(t=>`- ${line(t.reason)}\n  출처: ${line(t.url)}\n  미검증: ${line(t.unknowns||'새 입력에서의 실제 품질·시간·비용')}`),
-    '## 사용량과 비용',`프로젝트 누적 모델 비용의 요율 기반 기록: $${(s.usage.micros/1e6).toFixed(4)}. 이 중 예약·미확정: $${(s.usage.reserved/1e6).toFixed(4)}. 청구 확정액이 아닙니다.\n모델 요청 ${s.usage.calls}회. 준비·추가 분석·리포트의 공통 예산이며 도구별 호출 단가와 다릅니다.\nDaytona 청구액: 확인 불가. 외부 API 청구액: 제공사 청구 자료 미연결. 미확정 비용을 0으로 합산하지 않습니다.`,
+    '## 사용량과 비용',`프로젝트 누적 모델 비용의 요율 기반 기록: $${(s.usage.micros/1e6).toFixed(4)}. 이 중 예약·미확정: $${(s.usage.reserved/1e6).toFixed(4)}. 청구 확정액이 아닙니다.\n모델 요청 ${s.usage.calls}회. 준비·추가 분석·리포트의 공통 예산이며 도구별 호출 단가와 다릅니다.\nNosana 직접 배포 GPU 임대료: 토큰 요금에 포함되지 않으며 제공사 배포 내역에서 별도 확인.\nDaytona 청구액: 확인 불가. 외부 API 청구액: 제공사 청구 자료 미연결. 미확정 비용을 0으로 합산하지 않습니다.`,
     '## 최종 선택과 미확인 사항',s.selection?`사용자 선택: ${line(s.selection.title)}\n선택 이유: ${line(s.selection.reason)}`:'최종 선택 미정. 충족·미확인 조건과 사용자 피드백을 바탕으로 선택할 수 있습니다.',
     '서로 다른 조건의 실험에 임의의 점수·순위를 붙이지 않았습니다. 단일 입력의 결과를 모든 입력에 일반화할 수 없습니다. 보관 만료된 파일은 다시 확보해야 재현할 수 있습니다.');
   if(notes.length)parts.push('## 모델의 참고 해석',...notes.map(n=>`- 실행 ${n.runId}: ${line(n.interpretation)}\n  위 해석은 추가 검증 결과가 아니며 실제 출력·사용자 피드백을 우선합니다.`));

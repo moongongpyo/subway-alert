@@ -22,6 +22,11 @@ try {
     });actions++;console.log(JSON.stringify({dom,actions}));
   } else {
     if(config.generic){
+      // Optional parameters are collapsed in the shared form; exercise the same
+      // disclosure control a user opens before entering those values.
+      if(Object.keys(config.sample).length)await page.locator('#request-fields [name]').first().waitFor({state:'attached'});
+      const optional=page.locator('#request-fields details.optional-fields:not([open]) > summary');
+      if(await optional.count()){await optional.click();actions++;}
       for(const [name,value] of Object.entries(config.sample)){
         const el=page.locator(`[name="${name}"]`);
         const type=await el.getAttribute('type');actions++;

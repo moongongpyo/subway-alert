@@ -147,6 +147,7 @@ async function loadRecent(){try{
 }catch{return [];}}
 try{
   config=await api('/api/config');const c=config.configured;
+  $('#provider-brand').textContent='DAYTONA × '+(c.model?.provider==='nosana'?'NOSANA':'OPENAI');
   $('.budget-note').textContent=`최대 ${config.limits.minutes}분 준비 · 완료 후 ${config.limits.ttlMinutes}분 체험`;
   $('.settings-note').textContent=['로컬 단일 사용자 모드 · 자동 수정 최대 '+config.limits.repairs+'회',c.model?.billing==='gpu-hour'?`Nosana GPU: 시간당 $${c.model.hourlyUSD} · 배포 상한 $${c.model.maximumUSD} · 종료 ${new Date(c.model.expiresAt).toLocaleString('ko-KR')}`:'모델 비용: 작업당 $'+config.limits.jobUSD+(config.limits.userDayUSD==null?'':' · 하루 $'+config.limits.userDayUSD),'외부 API 및 Daytona 비용은 별도 한도로 관리합니다.'].join('\n');
   if(config.infrastructure&&!config.infrastructure.available){error(`Daytona 예약 ${config.infrastructure.used}/${config.infrastructure.limit}분 · 현재 새 환경을 만들 수 없습니다. 초기화: ${new Date(config.infrastructure.resetsAt).toLocaleString()}`);}

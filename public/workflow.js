@@ -1,4 +1,4 @@
-export const workflowSteps=['링크 선택','체험 준비','입력·실행','실행 결과','다음 실험','비교 리포트'];
+export const workflowSteps=['링크 선택','체험 준비','입력·실행','실행 결과','다음 실험','단건 리포트'];
 
 // Navigation never executes work. A new draft deliberately starts a new input step.
 export class Workflow {

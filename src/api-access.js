@@ -5,7 +5,8 @@ import { fail } from './config.js';
 // never through a claim by the model that an API is free.
 export function apiAccessOffer(plan, env=process.env) {
   const endpoint=new URL(plan.endpoint.url),host=endpoint.hostname;
-  const free=new Set(['api.github.com','jsonplaceholder.typicode.com','pokeapi.co','api.open-meteo.com','dog.ceo','catfact.ninja',...(env.FREE_API_HOSTS||'').split(',').map(s=>s.trim()).filter(Boolean)]);
+  // Frankfurter public API: https://frankfurter.dev/ (no key, free public access).
+  const free=new Set(['api.github.com','jsonplaceholder.typicode.com','pokeapi.co','api.open-meteo.com','api.frankfurter.dev','dog.ceo','catfact.ninja',...(env.FREE_API_HOSTS||'').split(',').map(s=>s.trim()).filter(Boolean)]);
   let rates={};try{rates=JSON.parse(env.PAID_API_RATES||'{}');}catch{}
   const rate=rates?.[host];
   const requestMicros=free.has(host)?0:typeof rate==='number'&&Number.isFinite(rate)&&rate>=0?Math.ceil(rate*1e6):null;

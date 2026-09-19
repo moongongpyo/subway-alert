@@ -12,7 +12,7 @@ import { records } from '../src/evaluation-data.js';
 test('cards appear before slow result HTML, then one selected step is prepared without executing it',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'pg-prefetch-browser-')),store=new Store(dir);
   let calls=0,invokes=0;const pending=[];
-  const answer=input=>({summary:'문자열 조건 확인',questions:['한글도 보존되나요?'],assessments:[],html:'<main><h2 data-value="/text"></h2></main>',css:'',cards:['한글','긴 문장','기호'].map(title=>({kind:'coverage',title:input+' · '+title,reason:'아직 확인하지 않은 입력 조건',check:'입력한 내용의 보존',changes:[{field:'text',valueJson:JSON.stringify(input+' '+title),evidence:'Text to return'}],requiresInput:[],asset:null}))});
+  const answer=input=>({view:{"question":"입력한 검색어와 관련된 후보가 반환됐나요?","rationale":"이름과 별 수를 함께 보고 후보의 관련성을 직접 확인합니다.","focus":"overview","evidence":[{"label":"반환 문자열","source":"current","path":"/text","stat":"value","field":"","unitPath":""}],"blocks":[],"unknowns":["별 수만으로 검색 목적에 맞는지 확정할 수 없습니다."]},summary:'문자열 조건 확인',questions:['한글도 보존되나요?'],assessments:[],html:'<main><h2 data-value="/text"></h2></main>',css:'',cards:['한글','긴 문장','기호'].map(title=>({kind:'coverage',title:input+' · '+title,reason:'아직 확인하지 않은 입력 조건',check:'입력한 내용의 보존',changes:[{field:'text',valueJson:JSON.stringify(input+' '+title),evidence:'Text to return'}],requiresInput:[],asset:null}))});
   const models={ask:async(_id,_role,_prompt,ctx,schema,{signal})=>{calls++;if(ctx.pendingResult)return schema.parse(answer(ctx.preparedInput.text));return new Promise((resolve,reject)=>{pending.push(()=>resolve(schema.parse(answer(ctx.preparedInput.text))));signal.addEventListener('abort',()=>reject(new Error('test cancelled')),{once:true});});}};
   const sandboxes={invoke:async(_id,input)=>{invokes++;return {status:200,data:{text:input.text}};}};
   const orchestrator={start(){},cancel(){}};
@@ -48,5 +48,11 @@ test('cards appear before slow result HTML, then one selected step is prepared w
   await page.getByRole('button',{name:'이 요청 실행 →'}).click();
   await page.getByRole('heading',{name:'first 한글 · 한글',exact:true}).waitFor();assert.equal(invokes,2);assert.equal(calls,4);
   assert.equal(records(store.db,j.evaluationId,'analysis').filter(a=>a.mode==='prefetch').length,2);
-  assert.deepEqual(errors,[]);pending.shift()();
+  pending.shift()();await page.waitForFunction(()=>window.panel?.data?.analyses.filter(a=>a.mode==='experience'&&a.state==='COMPLETED').length===2);
+  await page.evaluate(()=>{window.panel.stage=5;window.panel.render();});
+  assert.equal(await page.getByLabel('리포트 실행 선택').locator('option').count(),2);
+  assert.equal(await page.getByText('다른 도구도 비교해보고 싶어요').count(),0);
+  await page.getByRole('button',{name:'단건 리포트 만들기 (.md)'}).click();await page.getByRole('link',{name:'단건 리포트 다운로드 ↓'}).waitFor();
+  const report=records(store.db,j.evaluationId,'report')[0];assert.equal(report.kind,'single-run');assert.equal(report.runIds.length,1);assert.equal(report.runId,records(store.db,j.evaluationId,'run').at(-1).id);assert.equal(calls,4);assert.equal(invokes,2);
+  assert.deepEqual(errors,[]);
 });

@@ -4,18 +4,18 @@ import { join } from 'node:path';
 import { fail, PREPARING, TERMINAL, PRICES } from './config.js';
 import { redact } from './store.js';
 import { validateInput } from './contracts.js';
-import { validateURL, safeRequest } from './network.js';
 import { responseSample } from './analyze.js';
 import { evaluation, putEvaluation, records, putRecord, getRecord, idempotent, digest, EvaluationFiles } from './evaluation-data.js';
-import { GoalInput, FeedbackInput, ExperimentAnalysis, ExperienceAnalysis, NextExperiments, SearchQuery, AlternativeAnalysis, ReportNotes, assess } from './evaluation-contracts.js';
-import { makeRecipe, comparisonReport } from './reports.js';
-import { PRESENTATION_TASK, presentationSample, renderPresentation } from './result-presentation.js';
+import { GoalInput, FeedbackInput, ExperimentAnalysis, ExperienceAnalysis, NextExperiments, assess } from './evaluation-contracts.js';
+import { makeRecipe, singleRunReport } from './reports.js';
+import { PRESENTATION_TASK, presentationSample } from './result-presentation.js';
 import { ExperimentPrefetch } from './experiment-prefetch.js';
+import { analysisContext } from './analysis-data.js';
+import { renderAnalysisView } from './result-components.js';
 
 const latestFeedback=(db,eid,id)=>records(db,eid,'feedback').filter(f=>f.runId===id).at(-1);
-const noAuthURL=value=>{const url=validateURL(String(value));if(/[?&](key|api_key|token|access_token|secret|password)=/i.test(url.href))fail('INVALID_URL','인증정보가 포함된 URL은 사용할 수 없습니다.');return url.href;};
 export class Evaluations {
-  constructor(store,models,sandboxes,orchestrator,{request=safeRequest,autoExperience=true,autoPrefetch=autoExperience}={}){this.store=store;this.db=store.db;this.models=models;this.sandboxes=sandboxes;this.orchestrator=orchestrator;this.files=new EvaluationFiles(store);this.running=new Map();this.request=request;this.autoExperience=autoExperience;this.autoPrefetch=autoPrefetch;this.prefetch=new ExperimentPrefetch(this);}
+  constructor(store,models,sandboxes,orchestrator,{autoExperience=true,autoPrefetch=autoExperience}={}){this.store=store;this.db=store.db;this.models=models;this.sandboxes=sandboxes;this.orchestrator=orchestrator;this.files=new EvaluationFiles(store);this.running=new Map();this.autoExperience=autoExperience;this.autoPrefetch=autoPrefetch;this.prefetch=new ExperimentPrefetch(this);}
   get(id,owner){return evaluation(this.db,id,owner);}
   archivePreparation(id){const j=this.store.get(id);try{this.store.tx(()=>{const sample=this.files.snapshot(j.evaluationId,this.clean(j.sample||{},j.evaluationId)),result=this.files.snapshot(j.evaluationId,this.clean(j.result||null,j.evaluationId));const current=this.store.get(id);current.sample=sample;current.result=result;this.store.save(current);});}catch{const strip=v=>v&&typeof v==='object'?Array.isArray(v)?v.map(strip):Object.fromEntries(Object.entries(v).map(([k,x])=>[k,k==='base64'?'[파일 보관 실패]':strip(x)])):v;this.store.update(id,x=>{x.sample=strip(x.sample);x.result=strip(x.result);x.archiveWarning='검증 입력·출력 파일을 별도 보관하지 못했습니다.';});}}
   jobs(id){return this.store.all().filter(j=>j.evaluationId===id&&!j.taskType&&!j.purged);}
@@ -24,7 +24,7 @@ export class Evaluations {
   snapshot(id,owner){
     const e=this.get(id,owner),all=records(this.db,id),jobs=this.jobs(id),usage=this.db.prepare('SELECT * FROM requests WHERE evaluation=?').all(id);
     const runs=all.filter(r=>r.type==='run').map(r=>{const feedback=latestFeedback(this.db,id,r.id),goal=e.goals.find(g=>g.version===r.goalVersion);return {...r,feedback,assessment:assess(goal,r,feedback)};});
-    return this.clean({...e,owner:undefined,runs,experiments:all.filter(r=>r.type==='experiment'),suggestions:all.filter(r=>r.type==='suggestion'),transitions:all.filter(r=>r.type==='transition'),analyses:all.filter(r=>r.type==='analysis').map(({presentation,design,...r})=>({...r,hasPresentation:!!presentation})),reports:all.filter(r=>r.type==='report').map(({markdown,...r})=>r),jobs:jobs.map(j=>({id:j.id,title:j.projectName||j.plan?.title||j.url,url:j.url,state:j.state,version:j.version,hasUI:j.plan?.hasUI,capability:j.plan?.capability,expiresAt:j.expiresAt,createdAt:j.createdAt,usage:this.store.usage(j.id),transitionId:j.transitionId})),usage:{openaiCalls:usage.filter(r=>PRICES[r.model]?.billing!=='gpu-hour').length,rentalCalls:usage.filter(r=>PRICES[r.model]?.billing==='gpu-hour').length,micros:usage.reduce((s,r)=>s+r.micros,0),reserved:usage.filter(r=>r.status!=='settled').reduce((s,r)=>s+r.micros,0),calls:usage.length},formats:['md']},id);
+    return this.clean({...e,owner:undefined,runs,experiments:all.filter(r=>r.type==='experiment'),suggestions:all.filter(r=>r.type==='suggestion'&&r.kind!=='alternative'),transitions:all.filter(r=>r.type==='transition'),analyses:all.filter(r=>r.type==='analysis'&&r.mode!=='alternatives').map(({presentation,design,...r})=>({...r,hasPresentation:!!presentation})),reports:all.filter(r=>r.type==='report').map(({markdown,...r})=>r),jobs:jobs.map(j=>({id:j.id,title:j.projectName||j.plan?.title||j.url,url:j.url,state:j.state,version:j.version,hasUI:j.plan?.hasUI,capability:j.plan?.capability,expiresAt:j.expiresAt,createdAt:j.createdAt,usage:this.store.usage(j.id),transitionId:j.transitionId})),usage:{openaiCalls:usage.filter(r=>PRICES[r.model]?.billing!=='gpu-hour').length,rentalCalls:usage.filter(r=>PRICES[r.model]?.billing==='gpu-hour').length,micros:usage.reduce((s,r)=>s+r.micros,0),reserved:usage.filter(r=>r.status!=='settled').reduce((s,r)=>s+r.micros,0),calls:usage.length},formats:['md']},id);
   }
   goal(eid,owner,body){return this.store.tx(()=>{const e=this.get(eid,owner),g=GoalInput.parse(body);if(g.version!==e.goals.length)fail('CONFLICT','목적이 변경됐습니다. 새로고침해주세요.',409);
     const conditions=g.conditions.map(c=>{if(c.kind!=='subjective'&&c.pointer!==''&&!c.pointer.startsWith('/'))fail('INVALID_CONDITION','JSON Pointer는 /로 시작해야 합니다.');let expected;try{expected=JSON.parse(c.expectedJson);}catch{fail('INVALID_CONDITION','기대 값은 JSON 형식이어야 합니다.');}if(c.kind==='contains'&&typeof expected!=='string')fail('INVALID_CONDITION','포함 검사는 문자열 기대 값이 필요합니다.');return {...c,id:randomUUID(),expectedJson:JSON.stringify(expected)};});
@@ -100,17 +100,23 @@ export class Evaluations {
   experience(eid,owner,runId,{retry=false}={}){
     this.get(eid,owner);const run=this.record(eid,runId,'run');if(run.state==='running')fail('NOT_READY','실행 결과를 기다리고 있습니다.',409);
     const j=this.store.get(run.jobId),basis=this.basedOn(eid,j.id,run.id),context=this.context(eid,basis);
-    const fingerprint=digest({experience:3,basis,retry:retry?records(this.db,eid,'analysis').length:0});
+    const earlier=records(this.db,eid,'run').filter(r=>r.id!==run.id&&r.jobId===run.jobId&&r.state!=='running'&&r.createdAt<=run.createdAt).sort((a,b)=>a.createdAt-b.createdAt);
+    const previous=earlier.find(r=>r.id===run.parentRunId)||earlier.at(-1)||null;
+    const goal=this.get(eid).goals.find(g=>g.version===run.goalVersion),feedback=latestFeedback(this.db,eid,run.id);
+    const analysis=analysisContext({run,previous,goal,capability:j.plan.capability,assessment:assess(goal,run,feedback),feedback});
+    const sources={current:run.output??null,input:run.input,previous:previous?.output,previousInput:previous?.input};
+    const fingerprint=digest({experience:4,basis,retry:retry?records(this.db,eid,'analysis').length:0});
     return this.task(eid,owner,'experience',fingerprint,{mode:'experience',basedOn:basis},async(id,signal)=>{
-      const result=await this.models.ask(id,'G',PRESENTATION_TASK+' After designing the result, ALWAYS propose 3 concrete, distinct next experiment cards grounded in this tool and the current inputs/results (fewer only if the API genuinely has no independent conditions). No purpose question is required before execution. Evaluate the UNDERLYING tool capability, search relevance, output quality or edge-case handling; NEVER suggest testing this playground UI, card layout, rendering or visual density. Improve a weakness or explore a relevant edge case; do not repeat vague testing advice. A change must use an existing field, JSON value and an exact quote from its description/source as evidence. Do not invent supported options. For an image FILE field, asset may contain a detailed synthetic test image prompt and its field name; we will actually generate that image on card selection. Example background removal: flyaway hair against a similarly colored background, transparent objects, fine fur. Generated samples are not ground truth. For all other cards asset=null. requiresInput lists only fields requiring the user to upload/type their own input. Never invent an image URL. File bytes are unavailable; do not claim visual quality from metadata. Existing UI without a schema needs manual experiment instructions. Summary and checks are concise Korean.',{...context,fields:j.plan.fields,preparedInput:presentationSample(run.input,3000),response:presentationSample(run.output??null),execution:{state:run.state,status:run.status,error:run.error},sampling:'Up to 5 array items and truncated long strings for design only; renderer binds the full stored response.'},ExperienceAnalysis,{signal});
+      const result=await this.models.ask(id,'G',PRESENTATION_TASK+' After designing the result, ALWAYS propose 3 concrete, distinct next experiment cards grounded in this tool and the current inputs/results (fewer only if the API genuinely has no independent conditions). No purpose question is required before execution. Evaluate the UNDERLYING tool capability, search relevance, output quality or edge-case handling; NEVER suggest testing this playground UI, card layout, rendering or visual density. Improve a weakness or explore a relevant edge case; do not repeat vague testing advice. A change must use an existing field, JSON value and an exact quote from its description/source as evidence. Do not invent supported options. For an image FILE field, asset may contain a detailed synthetic test image prompt and its field name; we will actually generate that image on card selection. Example background removal: flyaway hair against a similarly colored background, transparent objects, fine fur. Generated samples are not ground truth. For all other cards asset=null. requiresInput lists only fields requiring the user to upload/type their own input. Never invent an image URL. File bytes are unavailable; do not claim visual quality from metadata. Existing UI without a schema needs manual experiment instructions. Summary and checks are concise Korean.',{...context,analysis,fields:j.plan.fields,preparedInput:presentationSample(run.input,3000),response:presentationSample(run.output??null),sampling:'Representative array items and truncated strings show shape. Full selected-column profiles are in analysis; renderer uses stored data.'},ExperienceAnalysis,{signal});
       this.store.assertActive(this.store.get(id));
-      const presentation=renderPresentation(result,run.output??null);let saved=this.saveCards(eid,basis,result.cards,run.input),suggestionsError=null;
+      const rendered=renderAnalysisView(result.view,sources,analysis,{mediaURL:file=>{if(!file?.artifactId)return null;try{const saved=this.files.get(eid,file.artifactId);return /^image\/(png|jpeg|gif|webp)$/.test(saved.mime)?`/api/evaluations/${encodeURIComponent(eid)}/files/${encodeURIComponent(saved.id)}/preview`:null;}catch{return null;}}});
+      const presentation=rendered.html;let saved=this.saveCards(eid,basis,result.cards,run.input),suggestionsError=null;
       if(!saved.length&&j.plan.fields.length){try{
         const repaired=await this.models.ask(id,'G','The prior cards could not be connected to this verified input form. Return 3 concrete experiments using ONLY the exact field names and types below. Each valueJson must parse as JSON. Do not add options or new fields. When testing new content, change the existing text input. For an existing image file field use asset to generate a synthetic test image. Never execute. The supplied descriptions are the evidence; no purpose question required.',{fields:j.plan.fields,input:run.input,context:context.goal,previousCards:result.cards,summary:result.summary},NextExperiments,{signal});
         this.store.assertActive(this.store.get(id));saved=this.saveCards(eid,basis,repaired.cards,run.input);
       }catch(error){suggestionsError=this.clean(error.message,eid);}}
       if(!saved.length)suggestionsError??='이 실행 계약에 연결할 수 있는 실험 카드를 구성하지 못했습니다. 직접 입력을 바꾸거나 목적을 지정할 수 있어요.';
-      return {summary:result.summary,questions:result.questions,assessments:result.assessments,suggestionIds:saved.map(c=>c.id),presentation,design:{html:result.html,css:result.css},designVersion:3,suggestionsError,cardValidation:{proposed:result.cards.map(c=>({title:c.title,fields:c.changes.map(d=>d.field),requiresInput:c.requiresInput})),accepted:saved.length}};
+      return {summary:result.summary,questions:result.questions,assessments:result.assessments,suggestionIds:saved.map(c=>c.id),presentation,design:{view:result.view},quality:rendered.quality,designVersion:4,suggestionsError,cardValidation:{proposed:result.cards.map(c=>({title:c.title,fields:c.changes.map(d=>d.field),requiresInput:c.requiresInput})),accepted:saved.length}};
     });
   }
   saveCards(eid,basis,cards,input){
@@ -149,9 +155,9 @@ export class Evaluations {
     return {input,rows,reason:t.reason,previousJob:t.fromJobId,destination:j.plan?.kind==='api'?j.plan.endpoint.url:j.url};
   }
   context(eid,basis){
-    const e=this.get(eid),j=this.store.get(basis.jobId),all=records(this.db,eid,'run'),selected=[...(basis.runId?[this.record(eid,basis.runId,'run')]:[]),...all.filter(r=>r.id!==basis.runId&&r.state!=='running'&&r.goalVersion===e.goals.length).slice(-2)];
+    const e=this.get(eid),j=this.store.get(basis.jobId),all=records(this.db,eid,'run').filter(r=>r.jobId===basis.jobId),selected=[...(basis.runId?[this.record(eid,basis.runId,'run')]:[]),...all.filter(r=>r.id!==basis.runId&&r.state!=='running'&&r.goalVersion===e.goals.length).slice(-2)];
     const bounded=value=>responseSample(this.clean(value??null,eid),1200),goal=e.goals.at(-1)||{purpose:'기본 기능 확인',conditions:[]};
-    return {goal:{...goal,purpose:goal.purpose.slice(0,600),constraints:goal.constraints?.slice(0,600),conditions:goal.conditions.map(c=>({...c,label:c.label.slice(0,150)}))},capability:j.plan?.capability,fields:(j.plan?.fields||[]).map(f=>({...f,example:f.type==='file'?'':f.example.slice(0,200),description:f.description.slice(0,300)})),version:j.version,source:(j.source?.text||'').slice(0,2500),runs:selected.map(r=>({id:r.id,state:r.state,input:bounded(r.input),output:bounded(r.output),error:r.error,assessment:assess(e.goals.find(g=>g.version===r.goalVersion),r,latestFeedback(this.db,eid,r.id)),feedback:latestFeedback(this.db,eid,r.id)})),previousCards:records(this.db,eid,'suggestion').slice(-3).map(c=>({title:c.title,check:c.check,changes:c.changes})),limitations:'File bytes omitted; only bounded output samples are supplied. Empty/deep data may be omitted. Never infer accuracy or completeness from sampling.'};
+    return {goal:{...goal,purpose:goal.purpose.slice(0,600),constraints:goal.constraints?.slice(0,600),conditions:goal.conditions.map(c=>({...c,label:c.label.slice(0,150)}))},capability:j.plan?.capability,fields:(j.plan?.fields||[]).map(f=>({...f,example:f.type==='file'?'':f.example.slice(0,200),description:f.description.slice(0,300)})),version:j.version,source:(j.source?.text||'').slice(0,2500),runs:selected.map(r=>({id:r.id,state:r.state,input:bounded(r.input),output:bounded(r.output),error:r.error,assessment:assess(e.goals.find(g=>g.version===r.goalVersion),r,latestFeedback(this.db,eid,r.id)),feedback:latestFeedback(this.db,eid,r.id)})),previousCards:records(this.db,eid,'suggestion').filter(c=>c.basedOn?.jobId===basis.jobId&&c.kind!=='alternative').slice(-3).map(c=>({title:c.title,check:c.check,changes:c.changes})),limitations:'File bytes omitted; only bounded output samples are supplied. Empty/deep data may be omitted. Never infer accuracy or completeness from sampling.'};
   }
   task(eid,owner,type,fingerprint,payload,perform){
     this.get(eid,owner);const existing=records(this.db,eid,type==='report'?'report':'analysis').find(r=>r.fingerprint===fingerprint);if(existing)return {...existing,state:this.store.get(existing.id)?.state||existing.state};
@@ -169,10 +175,11 @@ export class Evaluations {
     return record;
   }
   analyze(eid,owner,body){
+    if(body.mode==='alternatives')fail('FEATURE_REMOVED','현재는 같은 도구의 다음 실험만 지원합니다.',410);
     if(this.autoExperience&&body.mode!=='alternatives'&&body.runId)return this.experience(eid,owner,body.runId,{retry:body.retry===true});
     this.get(eid,owner);const basis=this.basedOn(eid,body.jobId,body.runId),j=this.store.get(body.jobId);
     if(!j.plan||!j.verifiedVersion)fail('NOT_READY','먼저 준비와 검증을 완료해주세요.',409);
-    const mode=body.mode==='alternatives'?'alternatives':'experiments',candidateURL=body.url?noAuthURL(body.url):null,context=this.context(eid,basis);
+    const mode='experiments',context=this.context(eid,basis);
     let input=body.input??(basis.runId?this.record(eid,basis.runId,'run').input:j.sample||{});
     if(body.input!==undefined){
       if(Object.keys(input).some(k=>!j.plan.fields.some(f=>f.name===k)))fail('INVALID_INPUT','현재 기능에 없는 입력입니다.');
@@ -181,9 +188,8 @@ export class Evaluations {
       input=this.store.tx(()=>this.files.snapshot(eid,input));
     }
     context.preparedInput=responseSample(input,1500);
-    const fingerprint=digest({basis,mode,candidateURL,input,retry:body.retry===true?records(this.db,eid,'analysis').length:0});
-    return this.task(eid,owner,'analysis',fingerprint,{basedOn:basis,mode,candidateURL},async(id,signal)=>{
-      if(mode==='alternatives')return this.findAlternatives(id,eid,basis,context,candidateURL,signal);
+    const fingerprint=digest({basis,mode,input,retry:body.retry===true?records(this.db,eid,'analysis').length:0});
+    return this.task(eid,owner,'analysis',fingerprint,{basedOn:basis,mode},async(id,signal)=>{
       const result=await this.models.ask(id,'G','Evaluate only supplied evidence. Separate execution success from goal fulfillment; subjective quality remains user judgment. Propose up to 3 relevant experiments to improve a documented limitation or explore an untested condition. Every change must use an existing field and quote its documented description/source in evidence. Never invent files, options or measured scores. Prefer one variable at a time. Ask for missing expectations instead of random suggestions. Existing UI without input schema: request manual input; never invent controls. Assessments are interpretations only.',context,ExperimentAnalysis,{signal});
       const cards=[];for(const c of result.cards){
         const prepared={...input},changes=[];
@@ -198,49 +204,25 @@ export class Evaluations {
       return {summary:result.summary,questions:result.questions,assessments:result.assessments.filter(a=>context.runs.some(r=>r.id===a.runId)&&context.goal.conditions.some(c=>c.id===a.conditionId)),suggestionIds:saved.map(c=>c.id)};
     });
   }
-  async findAlternatives(id,eid,basis,context,candidateURL,signal){
-    const sources=[],read=async url=>{this.store.count(id,'tools');const r=await this.request(url,{signal,maxBytes:500_000,timeout:15_000});if(r.status>=400)fail('SOURCE_UNAVAILABLE',`대안 문서 HTTP ${r.status}`);return r;};
-    if(candidateURL){const response=await read(candidateURL);let text=response.body.toString();if(!response.headers['content-type']?.includes('json')){const {load}=await import('cheerio');const $=load(text);$('script,style,nav').remove();text=$('body').text().replace(/\s+/g,' ');}
-      sources.push({id:'source-1',url:candidateURL,title:new URL(candidateURL).hostname,text:text.slice(0,4000),checkedAt:Date.now()});
-    }else{
-      const query=await this.models.ask(id,'H','Create a concise English GitHub repository search query for tools supporting the stated purpose and evidenced limitation. No personal data, filenames, document text, or secrets. Output keywords only. Do not search for an unrelated example app.',{goal:context.goal,capability:context.capability,feedback:context.runs.map(r=>({state:r.state,assessment:r.assessment,feedback:r.feedback?.satisfaction}))},SearchQuery,{small:true,signal});
-      const response=await read(`https://api.github.com/search/repositories?q=${encodeURIComponent(query.query)}&per_page=3`),items=JSON.parse(response.body.toString()).items||[];
-      for(const repo of items){if(!/^[\w.-]+\/[\w.-]+$/.test(repo.full_name)||this.jobs(eid).some(j=>j.url.replace(/\/$/,'')===`https://github.com/${repo.full_name}`))continue;
-        try{const r=await read(`https://api.github.com/repos/${repo.full_name}/readme`),body=JSON.parse(r.body.toString());if(body.encoding!=='base64')continue;const text=Buffer.from(body.content,'base64').toString('utf8').slice(0,3000);sources.push({id:'source-'+(sources.length+1),url:`https://github.com/${repo.full_name}`,title:repo.full_name,text,checkedAt:Date.now()});}catch(e){if(signal.aborted||e.code==='BUDGET_EXCEEDED')throw e;}}
-    }
-    if(!sources.length)return {summary:'근거를 확인한 대안이 없습니다. 다른 공식 문서 URL을 직접 입력할 수 있습니다.',suggestionIds:[]};
-    const result=await this.models.ask(id,'H','Select only candidates supported by supplied official repository or user-provided documentation. Link the current limitation to a concrete documented feature. Include an exact quote from that source. Never claim untested candidates are faster, cheaper, or more accurate. State uncertainties. Return empty candidates if unrelated or evidence insufficient. Unsupported GPU/OAuth/remote DB requirements must not be offered as executable.',{...context,source:undefined,sources},AlternativeAnalysis,{signal});
-    this.store.assertActive(this.store.get(id));const saved=[];
-    this.store.tx(()=>{for(const c of result.candidates){const source=sources.find(s=>s.id===c.sourceId);if(!source||!source.text.includes(c.quote))continue;const signature=digest({basis,url:source.url});if(records(this.db,eid,'suggestion').some(s=>s.signature===signature))continue;
-      saved.push(putRecord(this.db,eid,'suggestion',this.clean({kind:'alternative',title:source.title,url:source.url,reason:c.reason,limitation:c.limitation,unknowns:c.unknowns,source:{url:source.url,quote:c.quote,checkedAt:source.checkedAt},evidenceLevel:'문서에서 확인 · 직접 실행 미검증',basedOn:basis,signature,createdAt:Date.now()},eid)));}});
-    return {summary:result.summary,suggestionIds:saved.map(c=>c.id),searchScope:candidateURL?'직접 입력한 문서':'공개 GitHub 저장소·README (최대 3개)'};
-  }
-  transition(eid,owner,body,key,policy){
-    this.get(eid,owner);const card=body.suggestionId?this.record(eid,body.suggestionId,'suggestion'):null;if(card&&card.kind!=='alternative')fail('INVALID_REQUEST','대안 카드를 선택해주세요.');
-    const url=noAuthURL(card?.url||body.url),basis=card?.basedOn||this.basedOn(eid,body.jobId,body.runId);
-    if(typeof key!=='string'||!/^[\w-]{8,100}$/.test(key))fail('INVALID_REQUEST','중복 방지 요청 ID가 필요합니다.');
-    const previous=this.db.prepare('SELECT doc FROM jobs WHERE owner=? AND dedup=?').get(owner,key);
-    if(previous){const j=JSON.parse(previous.doc);if(j.url!==url||j.evaluationId!==eid)fail('CONFLICT','같은 요청의 대상이 변경됐습니다.',409);return j;}
-    this.assertBasis(eid,basis);
-    const transition={id:randomUUID(),fromJobId:basis.jobId,runId:basis.runId,url,reason:card?.reason||String(body.reason||'사용자가 선택한 대안').slice(0,1500),unknowns:card?.unknowns||'새 도구에서의 기능·실행 조건 미검증',source:card?.source||null,goalVersion:basis.goalVersion,createdAt:Date.now()};
-    const job=this.store.create(owner,url,key,policy,{evaluationId:eid,transitionId:transition.id});putRecord(this.db,eid,'transition',{...transition,toJobId:job.id});this.orchestrator.start(job.id);return job;
-  }
   recipe(eid,owner,jobId){this.get(eid,owner);const j=this.store.get(jobId);if(!j||j.evaluationId!==eid)fail('NOT_FOUND','체험을 찾을 수 없습니다.',404);return makeRecipe(this.clean(j,eid));}
   report(eid,owner,body){
     if(body.format!=='md')fail('UNSUPPORTED_FORMAT','현재는 Markdown 형식만 지원합니다.');
-    const s=this.snapshot(eid,owner),selected=new Set(body.runIds||s.runs.map(r=>r.id));if([...selected].some(id=>!s.runs.some(r=>r.id===id)))fail('NOT_FOUND','선택한 실행 기록이 없습니다.',404);
-    s.runs=s.runs.filter(r=>selected.has(r.id));if(!s.runs.length)fail('NO_RESULTS','실험 결과를 먼저 기록해주세요.');
-    s.runs=s.runs.filter(r=>r.state!=='running');if(!s.runs.length)fail('NO_RESULTS','실행이 끝난 결과를 선택해주세요.');
-    let fingerprint=digest({goals:s.goals,runs:s.runs,selection:s.selection,format:body.format,ai:body.ai===true});
-    const existing=records(this.db,eid,'report').find(r=>r.fingerprint===fingerprint);if(existing&&existing.expiresAt>Date.now()&&!(body.retry===true&&['FAILED','CANCELLED'].includes(existing.state)))return existing;if(existing)fingerprint=digest({fingerprint,regeneration:records(this.db,eid,'report').length});
+    const snapshot=this.snapshot(eid,owner);
+    if(body.ai===true)fail('UNSUPPORTED_REPORT','단건 리포트는 저장된 실행 기록으로 모델 호출 없이 생성합니다.');
+    if(body.runIds!==undefined&&(!Array.isArray(body.runIds)||body.runIds.length!==1))fail('SINGLE_RUN_REQUIRED','리포트에는 실행 한 건만 선택해주세요.');
+    const runId=body.runId||body.runIds?.[0]||snapshot.runs.filter(r=>r.state!=='running').at(-1)?.id;
+    if(body.runId&&body.runIds?.[0]&&body.runId!==body.runIds[0])fail('SINGLE_RUN_REQUIRED','리포트의 실행 선택이 서로 다릅니다.');
+    const run=snapshot.runs.find(r=>r.id===runId);if(!run)fail('NO_RESULTS','실행 결과 한 건을 선택해주세요.');
+    if(run.state==='running')fail('NO_RESULTS','실행이 끝난 결과를 선택해주세요.');
+    const job=snapshot.jobs.find(j=>j.id===run.jobId),goal=snapshot.goals.find(g=>g.version===run.goalVersion),stored=this.store.get(run.jobId);
+    const recipe=makeRecipe(this.clean({...stored,apiRequestHistory:(stored.apiRequestHistory||[]).filter(r=>r.at>=run.createdAt&&r.at<=run.finishedAt)},eid));
+    const fingerprint=digest({singleRun:1,run,goal,recipeVersion:recipe.version,format:body.format});
+    const existing=records(this.db,eid,'report').find(r=>r.fingerprint===fingerprint&&r.expiresAt>Date.now());if(existing)return existing;
     if(records(this.db,eid,'report').length>=10)fail('LIMIT','보관 가능한 리포트 10개 한도입니다.');
-    s.capturedAt=Date.now();const recipes=[...new Set(s.runs.map(r=>r.jobId))].map(id=>this.recipe(eid,owner,id)),expiresAt=Math.min(s.expiresAt,Date.now()+7*86400_000);
-    const render=notes=>{const markdown=comparisonReport(s,recipes,notes);if(Buffer.byteLength(markdown)>5_000_000)fail('REPORT_TOO_LARGE','리포트가 5MB를 초과합니다. 포함할 실험 수를 줄여주세요.');return {markdown,snapshotRevision:s.revision,runIds:s.runs.map(r=>r.id),expiresAt,format:'md'};};
-    if(!body.ai)return this.store.tx(()=>putRecord(this.db,eid,'report',{...render([]),fingerprint,state:'COMPLETED',createdAt:Date.now()}));
-    return this.task(eid,owner,'report',fingerprint,{expiresAt,format:'md',runIds:s.runs.map(r=>r.id)},async(id,signal)=>{
-      const result=await this.models.ask(id,'R','Write brief comparison interpretations anchored to the supplied run IDs, expectations and feedback. Do not invent metrics, costs, rankings, final choices or test results. Distinguish conditions and unknowns. These are supplementary notes; deterministic report contains actual facts.',{goals:s.goals,runs:s.runs.map(r=>({id:r.id,title:r.title,assessment:r.assessment,feedback:r.feedback,changes:r.changes,output:responseSample(r.output,1500)}))},ReportNotes,{signal});return render(result.notes.filter(n=>s.runs.some(r=>r.id===n.runId)));});
+    const createdAt=Date.now(),markdown=singleRunReport({run,job,goal,createdAt},recipe);
+    if(Buffer.byteLength(markdown)>5_000_000)fail('REPORT_TOO_LARGE','리포트가 5MB를 초과합니다.');
+    return this.store.tx(()=>putRecord(this.db,eid,'report',{markdown,fingerprint,state:'COMPLETED',createdAt,runId,runIds:[runId],jobId:run.jobId,kind:'single-run',format:'md',expiresAt:Math.min(snapshot.expiresAt,createdAt+7*86400_000)}));
   }
-  select(eid,owner,body){return this.store.tx(()=>{const e=this.get(eid,owner),j=this.jobs(eid).find(j=>j.id===body.jobId);if(!j)fail('NOT_FOUND','선택할 도구를 찾을 수 없습니다.',404);e.selection={jobId:j.id,title:j.plan?.title||j.url,reason:String(body.reason||'').slice(0,2000),at:Date.now()};return putEvaluation(this.db,e);});}
   async cancelTask(eid,owner,id){this.get(eid,owner);const j=this.store.get(id);if(!j||j.evaluationId!==eid||!j.taskType)fail('NOT_FOUND','분석 작업을 찾을 수 없습니다.',404);this.running.get(id)?.abort();if(PREPARING.has(j.state))this.store.update(id,x=>{x.state='CANCELLED';x.activeSince=null;});}
   async remove(eid,owner){
     const raw=this.db.prepare('SELECT doc FROM evaluations WHERE id=? AND owner=?').get(eid,owner);if(!raw)fail('NOT_FOUND','평가 프로젝트를 찾을 수 없습니다.',404);

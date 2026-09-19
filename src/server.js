@@ -88,14 +88,14 @@ export function createApp({store=new Store(),models,sandboxes,orchestrator,hosti
   app.post('/api/evaluations/:eid/suggestions/:cardId/prepare',(req,res)=>res.status(202).json(evaluations.prepareCard(req.params.eid,req.owner,req.params.cardId,{retry:req.body?.retry===true})));
   app.get('/api/evaluations/:eid/analyses/:taskId/presentation',(req,res)=>{
     evaluations.get(req.params.eid,req.owner);const a=evaluations.record(req.params.eid,req.params.taskId,'analysis');if(!a.presentation)fail('NOT_READY','결과 화면을 준비 중입니다.',409);
-    res.set({'X-Frame-Options':'SAMEORIGIN','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox allow-same-origin allow-popups allow-popups-to-escape-sandbox"}).type('html').send(a.presentation);
+    res.set({'X-Frame-Options':'SAMEORIGIN','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox allow-same-origin allow-popups allow-popups-to-escape-sandbox"}).type('html').send(a.presentation);
   });
   app.post('/api/evaluations/:eid/tasks/:taskId/cancel',async(req,res)=>{await evaluations.cancelTask(req.params.eid,req.owner,req.params.taskId);res.json({ok:true});});
-  app.post('/api/evaluations/:eid/transitions',(req,res)=>{if(!config().model.ready)fail('CONFIG_REQUIRED','모델 연결이 필요합니다.',503);res.status(202).json(publicJob(evaluations.transition(req.params.eid,req.owner,req.body,req.headers['idempotency-key'],jobPolicy())));});
+  app.post('/api/evaluations/:eid/transitions',(_req,_res)=>fail('FEATURE_REMOVED','대안 서비스 재체험은 현재 지원하지 않습니다.',410));
   app.get('/api/evaluations/:eid/jobs/:jobId/mapping',(req,res)=>res.json(evaluations.mapping(req.params.eid,req.owner,req.params.jobId)));
   app.get('/api/evaluations/:eid/jobs/:jobId/recipe',(req,res)=>{const r=evaluations.recipe(req.params.eid,req.owner,req.params.jobId);if(!r.available)fail('NOT_READY',r.reason,409);res.set('Content-Disposition',`attachment; filename="recipe-${req.params.jobId}.md"`).type('text/markdown').send(r.markdown);});
   app.post('/api/evaluations/:eid/reports',(req,res)=>{const r=evaluations.report(req.params.eid,req.owner,req.body);const {markdown,...meta}=r;res.status(r.state==='COMPLETED'?201:202).json(meta);});
-  app.get('/api/evaluations/:eid/reports/:reportId/download',(req,res)=>{evaluations.get(req.params.eid,req.owner);const r=evaluations.record(req.params.eid,req.params.reportId,'report');if(r.expiresAt<=Date.now())fail('EXPIRED','리포트 파일이 만료됐습니다.',410);if(!r.markdown)fail('NOT_READY',r.error||'리포트를 준비 중입니다.',409);res.set('Content-Disposition',`attachment; filename="comparison-${r.id}.md"`).type('text/markdown').send(r.markdown);});
+  app.get('/api/evaluations/:eid/reports/:reportId/download',(req,res)=>{evaluations.get(req.params.eid,req.owner);const r=evaluations.record(req.params.eid,req.params.reportId,'report');if(r.expiresAt<=Date.now())fail('EXPIRED','리포트 파일이 만료됐습니다.',410);if(!r.markdown)fail('NOT_READY',r.error||'리포트를 준비 중입니다.',409);res.set('Content-Disposition',`attachment; filename="run-report-${r.id}.md"`).type('text/markdown').send(r.markdown);});
   app.get('/api/evaluations/:eid/files/:fileId',(req,res)=>{evaluations.get(req.params.eid,req.owner);const f=evaluations.files.get(req.params.eid,req.params.fileId);res.set('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(f.name)}`).type('application/octet-stream').send(f.bytes);});
   app.get('/api/evaluations/:eid/files/:fileId/preview',(req,res)=>{
     evaluations.get(req.params.eid,req.owner);const f=evaluations.files.get(req.params.eid,req.params.fileId),b=f.bytes;
@@ -103,7 +103,6 @@ export function createApp({store=new Store(),models,sandboxes,orchestrator,hosti
     if(!mime)fail('UNSUPPORTED_FORMAT','미리보기는 확인된 PNG·JPEG·GIF·WebP 파일만 지원합니다.');res.type(mime).send(b);
   });
   app.post('/api/evaluations/:eid/files/:fileId/extend',(req,res)=>{evaluations.get(req.params.eid,req.owner);res.json(evaluations.files.extend(req.params.eid,req.params.fileId));});
-  app.post('/api/evaluations/:eid/selection',(req,res)=>res.json(evaluations.select(req.params.eid,req.owner,req.body)));
   app.delete('/api/evaluations/:eid',async(req,res)=>{await evaluations.remove(req.params.eid,req.owner);res.json({ok:true});});
   app.get('/api/jobs/:id/evidence',(req,res)=>{const j=owned(req);if(!j.evidence.some(e=>e.role==='E'))fail('NOT_FOUND','브라우저 검증 이미지가 없습니다.',404);res.sendFile(resolve('data/evidence',j.id+'.png'));});
   app.use(express.static(resolve('public')));

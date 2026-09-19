@@ -43,12 +43,12 @@ function renderWorkflow(){
   workflowHeader.replaceChildren(el('div',{class:'workflow-title'},el('div',{},el('span',{class:'eyebrow muted',text:'YOUR PLAYGROUND'}),el('div',{class:'project-heading'},el('h1',{text:projectTitle(current)}),el('button',{class:'text-button project-name-edit',text:'이름 변경','aria-label':'프로젝트 이름 변경',onclick:()=>editProjectName(current)}))),el('button',{class:'secondary',text:'다른 URL로 시작',onclick:()=>startNew()})),el('ol',{class:'workflow-steps'},...workflowSteps.map((title,i)=>el('li',{},el('button',{class:i===step?'workflow-step selected':i<workflow.active?'workflow-step complete':'workflow-step',...(i>workflow.active?{disabled:''}:{}),...(i===step?{'aria-current':'step'}:{}),onclick:()=>moveStep(i)},el('span',{class:'workflow-number',text:i<workflow.active?'✓':i+1}),el('span',{text:title}))))),el('div',{class:'workflow-context'},el('strong',{text:`${step+1}. ${workflowSteps[step]}`}),el('span',{text:review?'이전 단계 · 읽기 전용':step===1?terminal.has(current.state)?'종료된 준비 기록입니다. 완료한 단계와 중단 이유를 확인하세요.':'준비 상태를 실시간으로 확인합니다.':step===2?'요청 매개변수와 파일을 확인하거나 바꾼 뒤 직접 실행하세요.':step===3?'실제 응답을 확인하세요. 이어서 해볼 실험은 자동으로 준비됩니다.':step===4?'선택한 실험만 준비합니다. 실행은 다음 버튼 선택으로 시작합니다.':'필요한 기록을 골라 문서로 가져가세요.'})),review?el('p',{class:'review-banner',text:'이전 단계의 기록을 보고 있습니다. 확정된 URL·실행 조건·결과는 수정할 수 없습니다.'}):document.createTextNode(''));
   if(!review&&current.state==='READY')workflowHeader.querySelector('.workflow-title').append(el('button',{class:'text-button',text:'체험 종료',onclick:async()=>{try{openJob(await api(`/api/jobs/${current.id}/cancel`,{method:'POST'}));}catch(e){error(e.message);}}}));
   if(terminal.has(current.state))workflowHeader.querySelector('.workflow-title').append(historyButton(current));
-  if(step>=2&&terminal.has(current.state))workflowHeader.append(el('p',{class:'review-banner',text:`${jobStateLabel(current)} · 보관된 결과를 확인하고 비교 리포트를 만들 수 있습니다.`}));
+  if(step>=2&&terminal.has(current.state))workflowHeader.append(el('p',{class:'review-banner',text:`${jobStateLabel(current)} · 보관된 결과를 확인하고 단건 리포트를 만들 수 있습니다.`}));
   linkReview.replaceChildren(el('div',{class:'evaluation-card'},el('h3',{text:'이 체험에 사용한 링크'}),el('p',{class:'confirmed-url',text:current.url}),el('span',{class:'pill',text:'확정됨 · 읽기 전용'}),el('p',{class:'data-note',text:'다른 링크를 사용하려면 새로운 체험으로 시작해주세요.'})));
   // Completed preparation is a record. It must not expose cancel/auth/sample mutations.
   $('#job-section').querySelectorAll('button,input,textarea,select').forEach(n=>{n.disabled=review;});
   const previous=el('button',{class:'secondary',...(step===0?{disabled:''}:{}),text:'← 이전',onclick:()=>moveStep(step-1)});
-  const next=review?el('button',{class:'primary',text:step+1===workflow.active?'현재 단계로 돌아가기 →':'다음 기록 →',onclick:()=>moveStep(step+1)}):step===3?el('button',{class:'primary',...(evaluationPanel.latest()?.state==='running'?{disabled:''}:{}),text:'다음 실험 살펴보기 →',onclick:()=>moveStep(4)}):step===4?el('button',{class:'primary',...(!evaluationPanel.data?.runs.length?{disabled:''}:{}),text:'비교 리포트로 →',onclick:()=>moveStep(5)}):null;
+  const next=review?el('button',{class:'primary',text:step+1===workflow.active?'현재 단계로 돌아가기 →':'다음 기록 →',onclick:()=>moveStep(step+1)}):step===3?el('button',{class:'primary',...(evaluationPanel.latest()?.state==='running'?{disabled:''}:{}),text:'다음 실험 살펴보기 →',onclick:()=>moveStep(4)}):step===4?el('button',{class:'primary',...(!evaluationPanel.data?.runs.length?{disabled:''}:{}),text:'단건 리포트로 →',onclick:()=>moveStep(5)}):null;
   workflowFooter.replaceChildren(el('div',{class:'workflow-nav-row'},previous,el('span',{class:'workflow-position',text:`${step+1} / ${workflowSteps.length} · ${review?'기록 보기':'현재 단계'}`}),review&&step+1<workflow.active?el('button',{class:'text-button',text:'현재 단계로 돌아가기',onclick:()=>moveStep(workflow.active)}):null,next),el('p',{class:'data-note',text:'이전 단계는 읽기 전용으로 확인할 수 있습니다. 단계 이동만으로 실행하거나 모델을 호출하지 않습니다.'}));
 }
 const money=m=>'$'+(m/1e6).toFixed(3);
@@ -131,7 +131,7 @@ function historyButton(job){
       await api(`/api/jobs/${job.id}${restoring?'/restore':''}`,{method:restoring?'POST':'DELETE'});
       if(current?.id===job.id)startNew();
       historyNotice.hidden=false;
-      historyNotice.replaceChildren(el('span',{text:restoring?'체험을 최근 목록으로 복원했습니다.':'최근 목록에서 삭제했습니다. 실험·비교 기록은 보관됩니다.'}),...(!restoring?[historyButton({...job,dismissedAt:Date.now()})]:[]));
+      historyNotice.replaceChildren(el('span',{text:restoring?'체험을 최근 목록으로 복원했습니다.':'최근 목록에서 삭제했습니다. 실험 기록은 보관됩니다.'}),...(!restoring?[historyButton({...job,dismissedAt:Date.now()})]:[]));
       await loadRecent();
     }catch(e){error(e.message);button.disabled=false;}
   }});

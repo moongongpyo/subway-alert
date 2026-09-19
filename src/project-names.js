@@ -1,7 +1,7 @@
 // Presentation metadata only: never part of an executable plan or its version.
 const knownServices={
   'pokeapi.co':'PokéAPI','api.github.com':'GitHub API','jsonplaceholder.typicode.com':'JSONPlaceholder',
-  'api.open-meteo.com':'Open-Meteo','open-meteo.com':'Open-Meteo','dog.ceo':'Dog API','catfact.ninja':'Cat Facts',
+  'api.open-meteo.com':'Open-Meteo','open-meteo.com':'Open-Meteo','api.frankfurter.dev':'Frankfurter','frankfurter.dev':'Frankfurter','dog.ceo':'Dog API','catfact.ninja':'Cat Facts',
   'transit.tmapmobility.com':'TMAP 대중교통','openapi.sk.com':'SK open API',
 };
 const tidy=value=>typeof value==='string'?value.replace(/\s+/g,' ').trim().slice(0,70):'';

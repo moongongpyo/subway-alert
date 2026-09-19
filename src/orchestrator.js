@@ -8,7 +8,7 @@ import { PREPARING, TERMINAL, fail } from './config.js';
 import { apiAccessOffer, approveApiAccess, observedAuthURL } from './api-access.js';
 import { apiEvidence } from './api-evidence.js';
 
-const noRepair=new Set(['BUDGET_EXCEEDED','TIME_LIMIT_EXCEEDED','NO_PROGRESS','CONFIG_REQUIRED','UNSUPPORTED','STOPPED','UNKNOWN_PRICE','UNKNOWN_TOKENS','PRICE_REVIEW_REQUIRED','METERING_MISMATCH','INFRA_BUDGET','BROWSER_INSTALL_FAILED','BROWSER_UNREACHABLE','BROWSER_RUNNER_FAILED','PREVIEW_FAILED','EXTERNAL_UNREACHABLE','NETWORK_POLICY_REQUIRED','EXTERNAL_PRICING_REQUIRED','EXTERNAL_BUDGET_REQUIRED','EXTERNAL_CALL_LIMIT','HTTP_AUTH_CONFIRMATION_REQUIRED']);
+const noRepair=new Set(['BROWSER_TEST_FAILED','BUDGET_EXCEEDED','TIME_LIMIT_EXCEEDED','NO_PROGRESS','CONFIG_REQUIRED','UNSUPPORTED','STOPPED','UNKNOWN_PRICE','UNKNOWN_TOKENS','PRICE_REVIEW_REQUIRED','METERING_MISMATCH','INFRA_BUDGET','BROWSER_INSTALL_FAILED','BROWSER_UNREACHABLE','BROWSER_RUNNER_FAILED','PREVIEW_FAILED','EXTERNAL_UNREACHABLE','NETWORK_POLICY_REQUIRED','EXTERNAL_PRICING_REQUIRED','EXTERNAL_BUDGET_REQUIRED','EXTERNAL_CALL_LIMIT','HTTP_AUTH_CONFIRMATION_REQUIRED']);
 const invalidProposal=e=>['INVALID_PLAN','MODEL_INCOMPLETE'].includes(e.code)||e.name==='ZodError'||e instanceof SyntaxError;
 // The client has already exhausted its bounded transport retry; changing project code cannot fix it.
 for(const code of ['NOSANA_CONNECTION','NOSANA_TIMEOUT','NOSANA_EXPIRED'])noRepair.add(code);
@@ -160,20 +160,34 @@ export class Orchestrator {
     this.step(id,'credentials','completed','실제 인증 호출 통과');this.step(id,'function','completed','대표 입력의 실제 응답 확인');
     this.evaluations?.prefetch?.warmJob(id);
     this.step(id,'browser','running');this.log(id,'브라우저에서 입력과 버튼, 결과 화면을 확인하고 있어요');
-    let params={generic:true,sample:this.store.get(id).sample};
-    if(p.hasUI){
-      const observation=await this.sandboxes.browser(id,{inspect:true});
-      const actions=await this.models.ask(id,'E','Create a short browser test grounded ONLY in observed controls. Must perform a meaningful action then assert its result using CSS selectors (use unique IDs/name when present). No account signup, payments, external navigation, uploads of private data, or destructive actions. Only local seeded test data. At least one click/fill and one result assertion. If no meaningful test is possible, return empty actions.',{capability:p.capability,expected:p.expected,dom:observation.dom},BrowserActions,{signal});
-      if(!actions.actions.length)fail('UNSUPPORTED','원본 UI에서 자동 검증할 대표 동작을 확인하지 못했습니다.');
-      params={...actions,generic:false};
-    }
-    const evidence=await this.sandboxes.browser(id,params);
+    const evidence=await this.verifyBrowser(id,signal);
     if(evidence.passed!==true||evidence.version!==this.store.get(id).version)fail('BROWSER_FAILED','브라우저 검증의 성공 여부 또는 버전이 맞지 않습니다.');
     const publicEvidence=await this.sandboxes.verifyPreview(id);
     const directory=join(this.dir,'evidence');await mkdir(directory,{recursive:true});await writeFile(join(directory,id+'.png'),evidence.image);
     const {image,...details}=evidence;
     this.store.update(id,x=>{x.evidence.push({role:'E',at:Date.now(),...details,url:undefined,screenshot:undefined},publicEvidence);x.verifiedVersion=x.version;});
     this.step(id,'browser','completed','샌드박스 Chromium 조작·결과 및 외부 프리뷰 접속 검증');
+  }
+  async verifyBrowser(id,signal){
+    const j=this.store.get(id),p=j.plan;
+    if(!p.hasUI)return this.sandboxes.browser(id,{generic:true,sample:j.sample});
+    let feedback=null;
+    for(let attempt=0;attempt<2;attempt++){
+      this.store.assertActive(this.store.get(id));
+      const observation=await this.sandboxes.browser(id,{inspect:true});
+      const actions=await this.models.ask(id,'E','Create a short browser test grounded ONLY in observed controls. Must perform a meaningful action then assert its actual result using CSS selectors. Use expectValue for input, textarea and select values; expectText is only for rendered text. Checking an echoed input alone is not functional verification: also check the generated output. No account signup, payments, external navigation, uploads of private data, or destructive actions. Only local seeded test data. If correcting a failed test, preserve the original capability and result assertions; do not weaken checks to pass. Change only the browser scenario, never application files or installation. If no meaningful test is possible, return empty actions.',{capability:p.capability,expected:p.expected,dom:observation.dom,feedback},BrowserActions,{signal});
+      if(!actions.actions.length)fail('UNSUPPORTED','원본 UI에서 자동 검증할 대표 동작을 확인하지 못했습니다.');
+      try{return await this.sandboxes.browser(id,{...actions,generic:false});}
+      catch(error){
+        if(!['BROWSER_FAILED','BROWSER_TEST_INVALID'].includes(error.code))throw error;
+        this.failure(id,error);
+        if(attempt===1)fail('BROWSER_TEST_FAILED','브라우저 시나리오를 수정했지만 검증에 실패했습니다. 앱 또는 테스트를 확인해야 합니다. 설치는 반복하지 않습니다. '+error.message);
+        this.store.repair(id,hash({scope:'browser',version:j.version,actions,error:error.message}));
+        feedback=redact({scenario:actions,error:error.message},[this.store.secret(id),j.controlToken,j.previewToken,j.databaseUrl,process.env.OPENAI_API_KEY,process.env.DAYTONA_API_KEY]);
+        this.step(id,'browser','repairing');
+        this.log(id,'브라우저 테스트를 수정하고 있어요. 설치된 앱은 유지하고 화면 검증만 다시 실행합니다.');
+      }
+    }
   }
   async waitForKey(id,message='API 키 입력이 필요해요',kind='credentials'){
     this.store.update(id,j=>{j.state='WAITING_FOR_USER';j.waitKind=kind;j.waitSequence=(j.waitSequence||0)+1;j.waitUntil=Math.min(Date.now()+j.policy.waitingMs,j.createdAt+j.policy.waitingMs+j.policy.activeMs);j.activeSpent+=j.activeSince?Date.now()-j.activeSince:0;j.activeSince=null;j.message=message;const s=j.steps.find(s=>s.id===(kind==='sample'?'function':'credentials'));if(s)s.status='waiting_input';});

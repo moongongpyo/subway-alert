@@ -16,7 +16,7 @@ export const Plan = z.object({
 });
 export const Viewer = z.object({ fields:z.array(z.object({path:z.string(),label:z.string(),unit:z.string(),evidence:z.string()})).max(20), description:z.string() });
 export const Checks = z.object({ paths:z.array(z.string()).max(12), allowEmpty:z.boolean(), description:z.string() });
-export const BrowserActions = z.object({ actions:z.array(z.object({type:z.enum(['fill','click','select','check','expectText','expectVisible']),selector:z.string(),value:z.string()})).max(15), scenario:z.string() });
+export const BrowserActions = z.object({ actions:z.array(z.object({type:z.enum(['fill','click','select','check','expectText','expectValue','expectVisible']),selector:z.string(),value:z.string()})).max(15), scenario:z.string() });
 export const Classification = z.object({kind:z.enum(['api','github','unsupported']),reason:z.string(),summary:z.string()});
 export const DocumentationAssessment = z.object({kind:z.enum(['api','selection','insufficient','unsupported']),reason:z.string(),choiceIds:z.array(z.string()).max(24)});
 export const ImageDocumentation = z.object({text:z.string(),uncertainties:z.array(z.string()).max(6)});

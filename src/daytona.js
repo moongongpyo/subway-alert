@@ -144,14 +144,14 @@ export class Sandboxes {
     const j=this.store.get(id),root=j.root;
     if(!params.inspect)this.store.count(id,'browserPasses');
     // Reserve worst-case count for known fixed runner; no arbitrary browser scripts.
-    const count=params.inspect?2:params.generic?12+Object.keys(params.sample).length*4:params.actions.length+2;
+    const count=params.inspect?2:params.generic?12+Object.keys(params.sample).length*4:params.actions.reduce((sum,a)=>sum+(['expectValue','expectText'].includes(a.type)?2:1),0)+2;
     this.store.count(id,'browserActions',count);
     const config={...params,url:`http://127.0.0.1:${j.plan.hasUI?j.plan.port:8088}/`,version:j.version,screenshot:root+'/system/evidence.png'};
     await this.upload(id,root+'/system/browser-config.json',JSON.stringify(config));
     const out=await this.command(id,`node ${quote(root+'/system/browser.mjs')} ${quote(root+'/system/browser-config.json')}`,{raw:true,limit:90,allowNonzero:true});
     let result;
     try{result=JSON.parse(out.trim().split('\n').at(-1));}catch{fail('BROWSER_RUNNER_FAILED','브라우저 실행기가 검증 결과를 반환하지 못했습니다. '+String(out).slice(-1200));}
-    if(result.passed===false){const code=['BROWSER_UNREACHABLE','BROWSER_RUNNER_FAILED','EXTERNAL_UNREACHABLE','EXTERNAL_CALL_LIMIT','EXTERNAL_BUDGET_REQUIRED','HTTP_AUTH_CONFIRMATION_REQUIRED'].includes(result.code)?result.code:'BROWSER_FAILED';fail(code,code==='BROWSER_UNREACHABLE'?'샌드박스에서 프리뷰 주소에 연결하지 못했습니다. Daytona 네트워크 정책과 프리뷰 연결을 확인해야 합니다. '+result.error:result.error);}
+    if(result.passed===false){const code=['BROWSER_TEST_INVALID','BROWSER_UNREACHABLE','BROWSER_RUNNER_FAILED','EXTERNAL_UNREACHABLE','EXTERNAL_CALL_LIMIT','EXTERNAL_BUDGET_REQUIRED','HTTP_AUTH_CONFIRMATION_REQUIRED'].includes(result.code)?result.code:'BROWSER_FAILED';fail(code,code==='BROWSER_UNREACHABLE'?'샌드박스에서 프리뷰 주소에 연결하지 못했습니다. Daytona 네트워크 정책과 프리뷰 연결을 확인해야 합니다. '+result.error:result.error);}
     if(!params.inspect){this.store.count(id,'tools');const image=await (await this.sandbox(id)).fs.downloadFile(root+'/system/evidence.png');return {...result,image};}
     return result;
   }

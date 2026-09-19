@@ -61,7 +61,15 @@ try {
         else if(a.type==='select')await el.selectOption(a.value);
         else if(a.type==='check')await el.check();
         else if(a.type==='expectVisible')await el.waitFor({state:'visible'});
-        else if(a.type==='expectText'){await el.filter({hasText:a.value}).waitFor({state:'visible'});}
+        else if(a.type==='expectValue'){
+          await el.waitFor({state:'visible'});actions++;
+          await page.waitForFunction(({selector,value})=>document.querySelector(selector)?.value===value,{selector:a.selector,value:a.value});
+        }
+        else if(a.type==='expectText'){
+          actions++;
+          if(await el.evaluate(e=>['INPUT','TEXTAREA','SELECT'].includes(e.tagName)))throw Object.assign(new Error('입력 요소는 expectText 대신 expectValue로 검증해야 합니다: '+a.selector),{code:'BROWSER_TEST_INVALID'});
+          await el.filter({hasText:a.value}).waitFor({state:'visible'});
+        }
         actions++;
         if(new URL(page.url()).origin!==new URL(config.url).origin)throw new Error('테스트가 체험 주소 밖으로 이동했습니다.');
       }
@@ -70,4 +78,4 @@ try {
     await page.screenshot({path:config.screenshot,fullPage:false});actions++;
     console.log(JSON.stringify({passed:true,actions,url:config.url,version:config.version,scope:'sandbox-local',scenario:config.scenario||'입력 → 실행 → 결과 → 원본 보기',screenshot:config.screenshot}));
   }
-}catch(e){console.log(JSON.stringify({passed:false,actions,error:e.message,code:['EXTERNAL_UNREACHABLE','EXTERNAL_CALL_LIMIT','EXTERNAL_BUDGET_REQUIRED','HTTP_AUTH_CONFIRMATION_REQUIRED'].includes(e.code)?e.code:stage==='launch'?'BROWSER_RUNNER_FAILED':stage==='navigation'?'BROWSER_UNREACHABLE':'BROWSER_FAILED'}));process.exitCode=1;}finally{await browser?.close();}
+}catch(e){console.log(JSON.stringify({passed:false,actions,error:e.message,code:['BROWSER_TEST_INVALID','EXTERNAL_UNREACHABLE','EXTERNAL_CALL_LIMIT','EXTERNAL_BUDGET_REQUIRED','HTTP_AUTH_CONFIRMATION_REQUIRED'].includes(e.code)?e.code:stage==='launch'?'BROWSER_RUNNER_FAILED':stage==='navigation'?'BROWSER_UNREACHABLE':'BROWSER_FAILED'}));process.exitCode=1;}finally{await browser?.close();}

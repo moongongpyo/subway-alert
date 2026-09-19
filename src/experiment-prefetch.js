@@ -27,7 +27,7 @@ export class ExperimentPrefetch {
     // build an unbounded speculative tree or retry a failed paid request.
     if(previous.filter(a=>digest(a.basedOn)===digest(basis)).length>=2)return null;
     if(e.store.all().some(t=>t.taskType==='prefetch'&&PREPARING.has(t.state)))return null;
-    if(e.db.prepare("SELECT COUNT(*) n FROM requests WHERE status!='settled'").get().n>=2)return null;
+    if(e.db.prepare("SELECT COUNT(*) n FROM requests r JOIN jobs j ON j.id=r.job WHERE r.status IN ('pending','unknown') AND j.state IN ('ANALYZING','PREPARING','VERIFYING','WAITING_FOR_USER')").get().n>=2)return null;
     const context=e.context(eid,basis);
     const task=e.task(eid,owner,'prefetch',fingerprint,{mode:'prefetch',basedOn:basis},async(id,signal)=>{
       const result=await e.models.ask(id,'G',

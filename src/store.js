@@ -106,7 +106,7 @@ export class Store {
       if (input > p.inputPerCall || output > p.outputPerCall || input < 1 || output < 1) fail('BUDGET_EXCEEDED', '요청당 토큰 상한을 초과했습니다.');
       const rows = this.db.prepare('SELECT * FROM requests WHERE job=?').all(jobId);
       if (rows.length >= p.calls || rows.filter(r => r.role === role).length >= p.roleCalls) fail('BUDGET_EXCEEDED', '모델 호출 횟수를 모두 사용했습니다.');
-      if (rows.filter(r => r.status !== 'settled').length >= p.concurrency) fail('CONCURRENCY_LIMIT', '진행 중이거나 사용량이 미확정인 모델 요청은 최대 2개입니다.');
+      if (rows.filter(r => ['pending','unknown'].includes(r.status)).length >= p.concurrency) fail('CONCURRENCY_LIMIT', '진행 중이거나 사용량이 미확정인 모델 요청은 최대 2개입니다.');
       if (model === 'gpt-5.6-sol') {
         const sol = rows.filter(r => r.model === model);
         if (!j.round || sol.length >= 2 || sol.some(r => r.round !== j.round)) fail('BUDGET_EXCEEDED', '상위 모델 수정 한도를 사용했습니다.');
@@ -139,9 +139,14 @@ export class Store {
   }
   usage(id) {
     const rows = this.db.prepare('SELECT * FROM requests WHERE job=?').all(id);
-    return { calls: rows.length, rentalCalls:rows.filter(r=>PRICES[r.model]?.billing==='gpu-hour').length, input: rows.reduce((s,r)=>s+r.input,0), output: rows.reduce((s,r)=>s+r.output,0),
+    return { calls: rows.length, rentalCalls:rows.filter(r=>PRICES[r.model]?.billing==='gpu-hour').length, openaiCalls:rows.filter(r=>PRICES[r.model]?.billing!=='gpu-hour').length, input: rows.reduce((s,r)=>s+r.input,0), output: rows.reduce((s,r)=>s+r.output,0),
       micros: rows.reduce((s,r)=>s+r.micros,0), reserved: rows.filter(r=>r.status!=='settled').reduce((s,r)=>s+r.micros,0),
       roles: Object.fromEntries('ABCDEF'.split('').map(role=>[role,rows.filter(r=>r.role===role).length])) };
+  }
+  abandonNosana(id){
+    // Release only the slot of an ended Nosana attempt. Keep its uncertain
+    // tokens/costs and request count; never settle an unknown response as zero.
+    this.tx(()=>{const r=this.db.prepare('SELECT * FROM requests WHERE id=?').get(id);if(r?.status==='unknown'&&PRICES[r.model]?.billing==='gpu-hour')this.db.prepare("UPDATE requests SET status='abandoned' WHERE id=?").run(id);});
   }
   reserveInfrastructure(id) {
     this.tx(() => {

@@ -26,7 +26,7 @@ npm.cmd run test:docs-browser # 설치한 Chromium으로 문서 탭·iframe·요
 
 개발 중 자동 재시작은 `npm.cmd run dev`입니다. 준비 중 재시작하면 해당 작업은 중단하고 자원을 정리합니다. 호출을 자동 재생하지 않으며 이전 예산 원장은 보존됩니다.
 
-Nosana 직접 배포 모델을 사용할 때는 [Nosana 연결·비용 제한·OpenAI 복구 안내](docs/nosana.md)를 참고하세요. 기존 에이전트 프롬프트는 공통으로 사용하며 `MODEL_PROVIDER`로 연결만 전환합니다.
+Nosana 직접 배포 모델을 사용할 때는 [Nosana 연결·비용 제한·OpenAI 복구 안내](docs/nosana.md)를 참고하세요. 기존 에이전트 프롬프트는 공통으로 사용합니다. Nosana 실패 시 `OPENAI_API_KEY`가 있으면 같은 요청을 OpenAI로 자동 복구하고 사용량·전환 이유를 기록합니다. `NOSANA_OPENAI_FALLBACK=false`로 끌 수 있습니다. 금액·활성 시간 상한은 그대로이며 작은 분석 작업의 복구용 호출·토큰 한도는 위 안내에 명시했습니다. `MODEL_PROVIDER`로 수동 전환도 가능합니다.
 ## 구현된 흐름
 
 1. URL 검증 → 본문·목차·연결 문서·OpenAPI 수집. 필요한 경우 Chromium으로 동적 본문·탭·iframe을 확인하고 텍스트 근거가 부족하면 문서 이미지를 읽습니다. GitHub는 커밋을 고정한 README·설정을 수집합니다.

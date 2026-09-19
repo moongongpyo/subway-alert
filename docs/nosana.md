@@ -1,6 +1,6 @@
 # Nosana 직접 배포 연결
 
-기존 에이전트 프롬프트·작업 흐름·Zod 출력 계약은 유지한다. `Models`에서 제공사를 선택하며 `src/nosana.js`가 기존 Responses 요청을 Ollama의 `/api/chat`으로 변환한다. URL 분석, 코드 작성, 검증 피드백, 문서 이미지 분석, 결과 HTML, 실험 추천, 대안 분석, 리포트 모두 같은 Qwen 서버를 사용한다.
+기존 에이전트 프롬프트·작업 흐름·Zod 출력 계약은 유지한다. `Models`에서 제공사를 선택하며 `src/nosana.js`가 기존 Responses 요청을 Ollama의 `/api/chat`으로 변환한다. URL 분석, 코드 작성, 검증 피드백, 문서 이미지 분석, 결과 HTML, 실험 추천, 대안 분석, 리포트는 Qwen을 우선 사용하고 반복 실패 시 기존 OpenAI 클라이언트로 복구한다.
 
 ## 배포
 
@@ -20,6 +20,7 @@
 
 ```dotenv
 MODEL_PROVIDER=nosana
+NOSANA_OPENAI_FALLBACK=true
 NOSANA_BASE_URL=https://YOUR-OLLAMA-ENDPOINT
 NOSANA_INFERENCE_TOKEN=
 NOSANA_EXPIRES_AT=DEPLOYMENT_END_UTC_ISO_TIMESTAMP
@@ -36,14 +37,22 @@ NOSANA_IMAGE_EXPIRES_AT=IMAGE_DEPLOYMENT_END_UTC_ISO_TIMESTAMP
 
 ## 제한과 계측
 
-기존 작업별 호출·수정·토큰 누계·동시 요청 제한을 유지한다. Ollama는 별도 입력 토큰 사전 계측 API가 없으므로 한 호출의 전체 입력 허용량을 예약한 후 `prompt_eval_count`와 `eval_count`로 정산한다. 실제 사용량이 상한을 넘거나 불명확하면 기존 실패 처리가 적용된다. 이는 정확한 사전 토큰 예측값이 아니다. 서버 문맥 창은 32,768, 출력은 기존 작업별 상한으로 제한한다. 모델 timeout은 최대 180초이며 남은 작업 시간보다 길어지지 않는다.
+작업별 수정·비용·동시 실행 제한을 유지한다. 작은 작업의 자동 복구용 호출·토큰 한도는 아래와 같이 명시적으로 제한한다. Ollama는 별도 입력 토큰 사전 계측 API가 없으므로 한 호출의 전체 입력 허용량을 예약한 후 `prompt_eval_count`와 `eval_count`로 정산한다. 실제 사용량이 상한을 넘거나 불명확하면 기존 실패 처리가 적용된다. 이는 정확한 사전 토큰 예측값이 아니다. 서버 문맥 창은 32,768, 출력은 기존 작업별 상한으로 제한한다. 모델 timeout은 최대 180초이며 남은 작업 시간보다 길어지지 않는다.
 
-연결 수립 또는 응답 본문 수신 중의 네트워크 예외도 `NOSANA_CONNECTION`으로 분류한다. 모델 요청은 1초 뒤 동일한 내용으로 최대 한 번 재시도하며, 두 시도의 호출 수와 미확정 예약을 모두 유지한다. 사용자 취소와 배포 만료는 재시도하지 않는다. 연결 재시도를 소진하면 코드 수정 루프로 넘기지 않고 모델 연결 오류를 표시한다. 종료된 작업의 미확정 비용은 보존하되 서비스의 현재 동시 실행 슬롯을 영구 점유하지 않는다.
+연결 수립 또는 응답 본문 수신 중의 네트워크 예외도 `NOSANA_CONNECTION`으로 분류한다. 일시적 오류(408·429·5xx)는 1초 뒤 같은 내용으로 한 번 재시도한다. 400 등 요청 거절은 같은 요청을 반복하지 않는다. OpenAI 복구가 활성화되면 Nosana 호출당 최대 60초 및 남은 시간의 1/3로 제한해 복구 시간을 남긴다. 두 시도의 호출 수와 미확정 토큰·비용은 유지한다. 끝난 Nosana 요청은 `abandoned` 상태로 동시 실행 슬롯만 반환하며 미확정 비용을 0으로 정산하지 않는다.
 
-SDXL은 카드 선택 시 한 번만 요청한다. 768×768 이미지 1장, 20 steps로 고정하며 최대 120초 안에서 확인한다. 생성 결과는 1MB 이하 JPEG로 변환한다. 이미지 요청 횟수는 공통 ledger에 기록하지만 확산 모델을 언어 토큰으로 환산하지 않는다. 연결 실패 시 이미지를 중복 제출하지 않는다.
+2026-09-19 결과 HTML·실험 카드 요청의 복잡한 길이·개수 제약 스키마가 HTTP 400을 유발하는 것을 실제 비교 호출로 확인했다. Ollama decoding grammar에는 구조·타입·필수 키·enum을 전달하고 원래 전체 제약은 프롬프트와 최종 Zod 검증에 유지한다. 크기 제한을 통과하지 못한 출력은 성공으로 사용하지 않는다.
+
+SDXL은 카드 선택 시 한 번만 요청한다. 768×768 이미지 1장, 20 steps로 고정하며 최대 120초 안에서 확인한다. 생성 결과는 1MB 이하 JPEG로 변환한다. 이미지 요청 횟수는 공통 ledger에 기록하지만 확산 모델을 언어 토큰으로 환산하지 않는다. 연결 실패 시 Nosana에 이미지를 중복 제출하지 않는다. 자동 복구가 켜져 있으면 OpenAI에 한 번 요청하며, 시간 초과한 Nosana 생성이 원격에서 끝났는지는 미확정으로 남긴다.
 
 ## OpenAI 복구
 
-기존 OpenAI 클라이언트, 모델 설정, 프롬프트, 키는 보존한다. `.env` 또는 호스팅 환경변수의 `MODEL_PROVIDER=openai`로 바꾸고 서버를 재시작하면 기존 경로로 복구된다. Nosana 오류를 이유로 자동으로 OpenAI를 호출하지 않는다. 앱 연결을 복구해도 이미 실행 중인 Nosana GPU는 해당 배포 화면에서 중지하거나 설정된 종료 시각까지 과금된다.
+`OPENAI_API_KEY`가 있고 `NOSANA_OPENAI_FALLBACK=false`가 아니면 자동 복구한다. Nosana의 일시적 오류는 최대 두 번 시도 후 OpenAI를 한 번 호출한다. 요청 거절·배포 만료·누락된 연결 설정·잘못된 출력은 바로 OpenAI로 전환한다. 같은 프롬프트·문서 이미지·엄격한 출력 스키마를 사용하며, 역할에 따라 기존 Luna/Terra/Sol 모델을 선택한다. 이미지 생성도 SDXL 한 번 실패 후 `gpt-image-1-mini` 한 번으로 복구한다. OpenAI 요청 실패를 Nosana로 되돌리거나 별도 무한 재시도하지 않는다.
 
-공식 문서: [Ollama API](https://docs.ollama.com/api/chat), [구조화 출력](https://docs.ollama.com/capabilities/structured-outputs), [Nosana 배포 옵션](https://learn.nosana.com/deployments/options.html), [ComfyUI API](https://docs.comfy.org/development/comfyui-server/comms_routes).
+전환 후 해당 제공사 경로(언어/이미지 각각)는 5분 동안 OpenAI를 사용하고 이후 Nosana를 다시 시도한다. 사용자 취소, 작업 만료, 비용·토큰·호출 한도 초과, 검증된 정책 위반은 복구 호출을 시작하지 않는다. 자동 복구를 끄거나 OpenAI 키가 없으면 기존 Nosana 오류로 종료한다. Nosana 배포 만료 후에도 OpenAI 복구가 설정돼 있으면 URL 접수가 가능하다.
+
+OpenAI 입력 토큰은 기존 계측 API로 확인하고 생성 전에 비용을 공통 원장에 예약한다. 작업·프로젝트·사용자·서비스 금액 상한과 활성 시간은 증가하지 않는다. 호출 1~3회로 끝나던 추천·결과 화면·리포트 같은 작은 작업에는 복구용 호출 최대 2회(이미지는 1회)와 그에 필요한 토큰 한도를 명시적으로 추가한다. 이는 새 작업에만 적용되며 일일/프로젝트 금액 상한을 우회하지 않는다. 일반 준비 작업의 48회 상한은 유지한다. 실제 모델명·전환 이유·OpenAI 사용 횟수와 비용을 기록·표시한다.
+
+`.env` 또는 호스팅 환경변수의 `MODEL_PROVIDER=openai`로 바꾸고 재시작하면 수동 전환도 가능하다. 자동 복구는 Nosana GPU를 중지하거나 연장하지 않으며 임대료는 기존 종료 시각까지 별도다.
+
+공식 문서: [OpenAI 오류 처리](https://developers.openai.com/ko-KR/api/docs/guides/error-codes), [Ollama API](https://docs.ollama.com/api/chat), [구조화 출력](https://docs.ollama.com/capabilities/structured-outputs), [Nosana 배포 옵션](https://learn.nosana.com/deployments/options.html), [ComfyUI API](https://docs.comfy.org/development/comfyui-server/comms_routes).

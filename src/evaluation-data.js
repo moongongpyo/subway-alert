@@ -43,7 +43,7 @@ export function evaluationBudget(db,j,micros) {
     if(rows.filter(r=>r.doc&&JSON.parse(r.doc).taskType===j.taskType).reduce((s,r)=>s+r.micros,0)+micros>cap)fail('BUDGET_EXCEEDED','추가 분석 또는 리포트 비용 상한에 도달했습니다.');}
   // Retain uncertain token/cost reservations above, but completed/failed jobs
   // must not occupy live concurrency forever after a disconnected request.
-  if(db.prepare("SELECT COUNT(*) n FROM requests r JOIN jobs j ON j.id=r.job WHERE r.status!='settled' AND j.state IN ('ANALYZING','PREPARING','VERIFYING','WAITING_FOR_USER')").get().n>=2)fail('CONCURRENCY_LIMIT','서비스 전체 모델 동시 요청 한도에 도달했습니다.');
+  if(db.prepare("SELECT COUNT(*) n FROM requests r JOIN jobs j ON j.id=r.job WHERE r.status IN ('pending','unknown') AND j.state IN ('ANALYZING','PREPARING','VERIFYING','WAITING_FOR_USER')").get().n>=2)fail('CONCURRENCY_LIMIT','서비스 전체 모델 동시 요청 한도에 도달했습니다.');
 }
 
 // File bytes are encrypted separately from immutable experiment metadata. Never place them in model context.

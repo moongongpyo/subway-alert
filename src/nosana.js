@@ -2,13 +2,24 @@ import { AppError, fail } from './config.js';
 
 export const NOSANA_MODEL = 'qwen3.6:35b-a3b-q8_0';
 
+export const fallbackEnabled=(env=process.env)=>env.NOSANA_OPENAI_FALLBACK!=='false'&&!!env.OPENAI_API_KEY;
+// Ollama's grammar rejects some deeply nested bounded strings/arrays. Keep the
+// full constraints in the prompt and validate with the original Zod schema;
+// the decoding grammar only enforces structure, types, enums and required keys.
+export function ollamaSchema(schema){
+  if(Array.isArray(schema))return schema.map(ollamaSchema);
+  if(!schema||typeof schema!=='object')return schema;
+  return Object.fromEntries(Object.entries(schema).filter(([k])=>!['minLength','maxLength','minItems','maxItems','minimum','maximum'].includes(k)).map(([k,v])=>[k,['properties','$defs','definitions','patternProperties'].includes(k)?Object.fromEntries(Object.entries(v).map(([name,child])=>[name,ollamaSchema(child)])):ollamaSchema(v)]));
+}
+
 export function modelConfiguration(env=process.env) {
   const provider=env.MODEL_PROVIDER||'openai';
   if(!['openai','nosana'].includes(provider))fail('INVALID_CONFIG','MODEL_PROVIDER는 openai 또는 nosana여야 합니다.',503);
   if(provider==='openai')return {provider,ready:!!env.OPENAI_API_KEY,label:'OpenAI API'};
   const expiresAt=Date.parse(env.NOSANA_EXPIRES_AT||'');
   const hourlyUSD=Number(env.NOSANA_HOURLY_USD||0),maximumUSD=Number(env.NOSANA_MAX_USD||0);
-  return {provider,ready:!!env.NOSANA_BASE_URL&&Number.isFinite(expiresAt)&&expiresAt>Date.now(),
+  const primaryReady=!!env.NOSANA_BASE_URL&&Number.isFinite(expiresAt)&&expiresAt>Date.now();
+  return {provider,ready:primaryReady||fallbackEnabled(env),primaryReady,fallback:{provider:'openai',ready:fallbackEnabled(env)},
     label:'Nosana · Qwen 3.6 35B-A3B',model:NOSANA_MODEL,expiresAt:Number.isFinite(expiresAt)?expiresAt:null,
     billing:'gpu-hour',hourlyUSD,maximumUSD};
 }
@@ -46,7 +57,7 @@ export class NosanaClient {
       headers:{'Content-Type':'application/json',...(this.token?{Authorization:'Bearer '+this.token}:{})},
       body:body?JSON.stringify(body):undefined,signal:signal?AbortSignal.any([signal,deadline]):deadline});}
     catch(error){this.transportFailure(error,signal,deadline);}
-    if(!response.ok){await response.body?.cancel();fail('NOSANA_CONNECTION',`Nosana 모델 서버가 HTTP ${response.status}를 반환했습니다. 배포 상태를 확인해주세요.`,response.status);}
+    if(!response.ok){await response.body?.cancel();fail('NOSANA_CONNECTION',`Nosana 모델 서버가 HTTP ${response.status}를 반환했습니다. ${response.status===400?'요청 형식 또는 출력 스키마가 거절됐습니다.':'모델 연결·배포 상태를 확인해주세요.'}`,response.status);}
     const reader=response.body.getReader();let bytes=0;const parts=[];
     try{for(;;){const {value,done}=await reader.read();if(done)break;bytes+=value.length;if(bytes>maxBytes)fail('MODEL_INCOMPLETE','모델 응답 크기 제한을 초과했습니다.');parts.push(Buffer.from(value));}}
     catch(error){this.transportFailure(error,signal,deadline);}
@@ -64,7 +75,7 @@ export class NosanaClient {
     // Carry over the Responses format as protocol instructions; tasks stay intact.
     const messages=[{role:'system',content:body.instructions+'\n\nReturn JSON matching this schema:\n'+JSON.stringify(body.text.format.schema)},{role:'user',content,...(images.length?{images}:{})}];
     const r=await this.request('/api/chat',{model:NOSANA_MODEL,messages,stream:false,
-      format:body.text.format.schema,think:false,keep_alive:'30m',
+      format:ollamaSchema(body.text.format.schema),think:false,keep_alive:'30m',
       options:{num_ctx:32768,num_predict:body.max_output_tokens,temperature:0.2}},options);
     const usage={input_tokens:r.prompt_eval_count,output_tokens:r.eval_count};
     if(r.model!==NOSANA_MODEL||!Number.isInteger(usage.input_tokens)||usage.input_tokens<1||!Number.isInteger(usage.output_tokens)||usage.output_tokens<0)fail('UNKNOWN_TOKENS','Nosana 모델 또는 실제 토큰 사용량을 확인하지 못했습니다.');

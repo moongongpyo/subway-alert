@@ -9,7 +9,7 @@ import {stepsFor} from '../src/contracts.js';
 const fixture=t=>{const dir=mkdtempSync(join(tmpdir(),'pg-lifecycle-'));const s=new Store(dir);const j=s.create('local','https://example.com','lifecycle');const o=new Orchestrator(s,{}, {cleanup:async id=>s.update(id,x=>{x.cleanedAt=Date.now();x.cleanupPending=false;})},dir);t.after(()=>{s.close();rmSync(dir,{recursive:true,force:true});});return {s,j,o};};
 test('exhausted model transport retries do not become source-code repair attempts',async t=>{
   const {s,j,o}=fixture(t);let calls=0;o.models={ask:async()=>{calls++;}};
-  for(const code of ['NOSANA_CONNECTION','NOSANA_TIMEOUT','NOSANA_EXPIRED']){
+  for(const code of ['NOSANA_CONNECTION','NOSANA_TIMEOUT','NOSANA_EXPIRED','OPENAI_FALLBACK_FAILED']){
     const error=Object.assign(new Error('model unavailable'),{code});
     await assert.rejects(o.repairPlan(j.id,error,{},new AbortController().signal),e=>e===error);
   }

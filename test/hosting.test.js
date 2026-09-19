@@ -36,3 +36,15 @@ test('remote gate protects pages and APIs, validates origin, and exposes only he
   assert.equal((await fetch(base,{method:'POST',headers:{...headers,authorization:auth,origin:'https://evil.example'}})).status,403);
   assert.equal((await fetch(base,{method:'POST',headers:{...headers,authorization:auth,origin:'https://demo.example'}})).status,200);
 });
+
+test('public demo opens pages and APIs without credentials while retaining HTTPS and origin checks',async t=>{
+  const config=hostingConfig({HOST:'0.0.0.0',PUBLIC_ORIGIN:'https://demo.example',PUBLIC_DEMO:'true'});
+  assert.equal(config.publicDemo,true);
+  const app=express();app.use(hostingGate(config));app.use((_req,res)=>res.json({ok:true}));
+  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));t.after(()=>{server.closeAllConnections();server.close();});
+  const base=`http://127.0.0.1:${server.address().port}`,headers={host:'demo.example','x-forwarded-proto':'https'};
+  for(const path of ['/','/api/jobs']){const response=await fetch(base+path,{headers});assert.equal(response.status,200);assert.equal(response.headers.get('www-authenticate'),undefined);}
+  assert.equal((await fetch(base,{method:'POST',headers:{...headers,origin:'https://demo.example'}})).status,200);
+  assert.equal((await fetch(base,{method:'POST',headers:{...headers,origin:'https://other.example'}})).status,403);
+  assert.equal((await fetch(base,{headers:{...headers,'x-forwarded-proto':'http'}})).status,400);
+});

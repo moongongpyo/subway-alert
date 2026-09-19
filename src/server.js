@@ -27,8 +27,8 @@ export function createApp({store=new Store(),models,sandboxes,orchestrator,hosti
       if(req.headers['x-playground-request']!=='1')return res.status(403).json({error:'요청 검증 헤더가 필요합니다.'});
     }
     const cookie=req.headers.cookie?.split(';').map(s=>s.trim()).find(s=>s.startsWith('pg_session='))?.slice(11);
-    if(cookie&&sessions.has(cookie))req.owner='local';
-    else if(req.method==='GET'&&!req.path.startsWith('/api/jobs/')){const token=randomBytes(24).toString('hex');sessions.add(token);res.cookie('pg_session',token,{httpOnly:true,sameSite:'strict',secure:hosting.remote,maxAge:86400_000});req.owner='local';}
+    if(cookie&&sessions.has(cookie))req.owner=hosting.remote&&hosting.publicDemo?'guest:'+cookie:'local';
+    else if(req.method==='GET'&&!req.path.startsWith('/api/jobs/')){const token=randomBytes(24).toString('hex');sessions.add(token);res.cookie('pg_session',token,{httpOnly:true,sameSite:'strict',secure:hosting.remote,maxAge:86400_000});req.owner=hosting.remote&&hosting.publicDemo?'guest:'+token:'local';}
     else return res.status(401).json({error:'페이지를 새로고침해주세요.'});
     next();
   });
@@ -49,7 +49,7 @@ export function createApp({store=new Store(),models,sandboxes,orchestrator,hosti
   };
   const owned=(req)=>{const j=store.get(req.params.id);if(!j||j.purged||j.owner!==req.owner)fail('NOT_FOUND','작업을 찾을 수 없습니다.',404);return j;};
   const jobPolicy=()=>({userRequests:numericSetting('EXTERNAL_USER_REQUESTS',50),externalMicros:Math.floor(numericSetting('EXTERNAL_JOB_BUDGET_USD',0,{integer:false,positive:false})*1e6),sandboxDailyMinutes:numericSetting('DAYTONA_DAILY_MINUTES',POLICY.sandboxDailyMinutes),maxSandboxes:numericSetting('DAYTONA_MAX_SANDBOXES',POLICY.maxSandboxes)});
-  app.get('/api/config',(_req,res)=>res.json({configured:config(),limits:{jobUSD:POLICY.jobMicros/1e6,userDayUSD:POLICY.userDayMicros/1e6,serviceDayUSD:POLICY.serviceDayMicros/1e6,minutes:POLICY.activeMs/60_000,repairs:POLICY.repairs,ttlMinutes:POLICY.readyMs/60_000,calls:POLICY.calls},infrastructure:store.infrastructureStatus(jobPolicy()),mode:hosting.remote?'private-hosted':'local'}));
+  app.get('/api/config',(_req,res)=>res.json({configured:config(),limits:{jobUSD:POLICY.jobMicros/1e6,userDayUSD:POLICY.userDayMicros/1e6,serviceDayUSD:POLICY.serviceDayMicros/1e6,minutes:POLICY.activeMs/60_000,repairs:POLICY.repairs,ttlMinutes:POLICY.readyMs/60_000,calls:POLICY.calls},infrastructure:store.infrastructureStatus(jobPolicy()),mode:hosting.remote?(hosting.publicDemo?'public-demo':'private-hosted'):'local'}));
   app.get('/api/jobs',(req,res)=>res.json(store.list(req.owner,{dismissed:req.query.dismissed==='1'}).map(publicJob)));
   app.post('/api/jobs',(req,res)=>{
     if(!config().model.ready)fail('CONFIG_REQUIRED','선택한 모델 제공사의 연결 설정을 확인해주세요.',503);

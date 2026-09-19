@@ -9,6 +9,20 @@ import {records,putRecord} from '../src/evaluation-data.js';
 import { Orchestrator } from '../src/orchestrator.js';
 import { apiAccessOffer } from '../src/api-access.js';
 
+test('public demo guest sessions cannot access operator or other visitor records',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'pg-public-demo-')),store=new Store(dir);
+  const hosting={remote:true,publicDemo:true,hostname:'127.0.0.1',origin:'https://127.0.0.1'};
+  const {app}=createApp({store,models:{},sandboxes:{},orchestrator:{},hosting}),server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
+  t.after(()=>{server.closeAllConnections();server.close();store.close();rmSync(dir,{recursive:true,force:true});});
+  const base=`http://127.0.0.1:${server.address().port}`,headers={'x-forwarded-proto':'https'};
+  const home=await fetch(base,{headers}),cookie=home.headers.get('set-cookie').split(';')[0];assert.equal(home.status,200);assert.equal(home.headers.get('www-authenticate'),null);
+  const owner='guest:'+cookie.slice('pg_session='.length),mine=store.create(owner,'https://example.com','public-guest-job'),privateJob=store.create('local','https://example.org','private-job');
+  const read=path=>fetch(base+path,{headers:{...headers,cookie}});
+  assert.deepEqual((await(await read('/api/jobs')).json()).map(j=>j.id),[mine.id]);assert.equal((await read('/api/jobs/'+privateJob.id)).status,404);
+  const otherCookie=(await fetch(base,{headers})).headers.get('set-cookie').split(';')[0];assert.equal((await fetch(base+'/api/jobs/'+mine.id,{headers:{...headers,cookie:otherCookie}})).status,404);
+  assert.equal((await(await read('/api/config')).json()).mode,'public-demo');
+});
+
 test('URL submissions do not require Daytona configuration or available sandbox quota',async t=>{
   const saved=Object.fromEntries(['MODEL_PROVIDER','OPENAI_API_KEY','DAYTONA_API_KEY','DAYTONA_DAILY_MINUTES'].map(k=>[k,process.env[k]]));
   Object.assign(process.env,{MODEL_PROVIDER:'openai',OPENAI_API_KEY:'fixture-model',DAYTONA_DAILY_MINUTES:'1'});delete process.env.DAYTONA_API_KEY;

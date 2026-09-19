@@ -135,7 +135,8 @@ Chromium은 자기 샌드박스의 `127.0.0.1` 서비스에 접속합니다. 샌
 
 - 루트 `Dockerfile`은 Node 24, 앱 의존성과 문서 분석용 Chromium을 설치합니다. 로컬 `.env`, 데이터, 키와 로그는 이미지·업로드에서 제외합니다.
 - 서비스 시작 명령은 `node src/server.js`, 헬스체크는 `/healthz`, 인스턴스는 1개입니다. `/app/data`에 영구 볼륨을 연결해야 SQLite 기록·암호화 키·결과 파일이 재배포 후에도 유지됩니다.
-- `HOST=0.0.0.0`, `PUBLIC_ORIGIN=https://<서비스 도메인>`, `ACCESS_USERNAME=admin`, 무작위 `ACCESS_PASSWORD`(24자 이상)를 설정합니다. 외부 모드는 유효한 HTTPS 주소와 비밀번호가 없으면 시작하지 않습니다.
+- 심사용 공개 접속은 `PUBLIC_DEMO=true`로 설정합니다. 로그인 없이 방문자별 임시 세션으로 체험하며, 다른 방문자와 기존 운영자의 실행·인증 기록을 공유하지 않습니다. 비용·호출 제한은 유지합니다.
+- 비공개 접속은 `PUBLIC_DEMO=false`와 `HOST=0.0.0.0`, `PUBLIC_ORIGIN=https://<서비스 도메인>`, `ACCESS_USERNAME=admin`, 무작위 `ACCESS_PASSWORD`(24자 이상)를 설정합니다. 외부 모드는 유효한 HTTPS 주소와 비밀번호가 없으면 시작하지 않습니다.
 - `OPENAI_API_KEY`, `DAYTONA_API_KEY`는 Railway 변수로 설정합니다. 기존 지하철 DB는 현재 앱에서 사용하지 않습니다.
 - `/healthz`만 인증 없이 응답하며 화면·API·다운로드에는 로그인이 필요합니다. Railway TLS 프록시 뒤에서 운영하며 직접 HTTP 접속은 허용하지 않습니다.
 

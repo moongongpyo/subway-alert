@@ -22,24 +22,12 @@ export function makeRecipe(j){
   return {available:true,version:j.verifiedVersion,markdown:parts.filter(Boolean).join('\n\n'),files,verifiedAt:j.evidence.at(-1)?.at};
 }
 
-export function comparisonReport(snapshot,recipes=[],notes=[]) {
-  const s=snapshot,goal=s.goals.at(-1),parts=[`# ${line(goal?.purpose||'기본 기능 체험')} — 비교 리포트`,
-    `작성 시각: ${new Date(s.capturedAt).toISOString()}\n기록 버전: ${s.revision}\n형식: Markdown\n선택 기록: ${s.runs.length}개\n최종 선택: ${line(s.selection?.title||'미정')}`,
-    '## 최초 목적과 기대 조건',block(s.goals[0]||{purpose:'기본 기능 확인; 목적 미설정'}),'## 목적 변경 과정',...s.goals.map(g=>`- v${g.version}: ${line(g.purpose)} · 제약: ${line(g.constraints||'미설정')}`),
-    '## 서비스별 실제 결과','| 도구 / 실행 | 실행 상태 | 목적 충족 | 사용자 만족 | 관측 시간 | 외부 API 비용 |\n| --- | --- | --- | --- | --- | --- |',
-    ...s.runs.map(r=>`| ${line(s.jobs.find(j=>j.id===r.jobId)?.title)} / ${r.id.slice(0,8)} | ${states[r.state]||r.state} | ${states[r.assessment.status]} | ${states[r.feedback?.satisfaction]||'미응답'} | ${r.durationMs==null?'미측정':r.durationMs+' ms / 1회 왕복'} | ${r.cost?.externalMicros==null?'확인 불가':r.cost.kind==='user_declared_free'?'사용자 확인 무료 한도 (제공사 미검증)':('$'+(r.cost.externalMicros/1e6).toFixed(4)+' 예약 상한')} |`),
-    '시간은 제어 서버에서 관측한 1회 실행 왕복입니다. 제공사 서버 처리 시간이나 반복 성능 벤치마크가 아닙니다. 원래 UI에서 등록한 결과는 사용자 등록이며 실행 시간은 측정하지 않았습니다.',
-    '## 실험의 발전과 조건 차이'];
-  for(const r of s.runs){const prior=s.runs.find(p=>p.id===r.parentRunId);const same=prior&&JSON.stringify(prior.input)===JSON.stringify(r.input)&&prior.goalVersion===r.goalVersion&&prior.version===r.version;
-    parts.push(`### ${line(r.title)} · ${r.id}`,`- 목적 버전: ${r.goalVersion}\n- 제안 이유: ${line(r.reason)}\n- 확인할 조건: ${line(r.check)}\n- 이전 실험: ${r.parentRunId||'없음'}\n- 비교 가능성: ${same?'같은 명시 입력·목적·버전; DB 상태·캐시는 별도 확인 필요':'일부 조건 차이 또는 직접 비교 어려움; 입력·버전·환경을 확인하세요.'}\n- 결과 출처: ${line(r.provenance)}\n- 사용 조건: ${line(r.manualConditions||r.measurement)}\n- 관측 환경: ${line(JSON.stringify(r.environment))}`,
-      '입력·파일 참조:',block(r.input),'이전 대비 변경:',block(r.changes),'실제 출력 또는 오류:',block(r.output??{error:r.error||r.state}),'조건별 평가:',block(r.assessment),r.feedback?'사용자 피드백:\n'+block(r.feedback):'사용자 피드백 없음.');
-  }
-  parts.push('## 설치·인증·검증 과정',...s.jobs.map(j=>`- ${line(j.title)}: ${line(j.state)}, 버전 ${line(j.version)}, 준비 작업 ${j.id}. 세부 명령·인증 방식은 아래 레시피 참조.`),
-    '## 대안 선택의 근거',...s.transitions.map(t=>`- ${line(t.reason)}\n  출처: ${line(t.url)}\n  미검증: ${line(t.unknowns||'새 입력에서의 실제 품질·시간·비용')}`),
-    '## 사용량과 비용',`프로젝트 누적 모델 비용의 요율 기반 기록: $${(s.usage.micros/1e6).toFixed(4)}. 이 중 예약·미확정: $${(s.usage.reserved/1e6).toFixed(4)}. 청구 확정액이 아닙니다.\n모델 요청 ${s.usage.calls}회. 준비·추가 분석·리포트의 공통 예산이며 도구별 호출 단가와 다릅니다.\nNosana 직접 배포 GPU 임대료: 토큰 요금에 포함되지 않으며 제공사 배포 내역에서 별도 확인.\nDaytona 청구액: 확인 불가. 외부 API 청구액: 제공사 청구 자료 미연결. 미확정 비용을 0으로 합산하지 않습니다.`,
-    '## 최종 선택과 미확인 사항',s.selection?`사용자 선택: ${line(s.selection.title)}\n선택 이유: ${line(s.selection.reason)}`:'최종 선택 미정. 충족·미확인 조건과 사용자 피드백을 바탕으로 선택할 수 있습니다.',
-    '서로 다른 조건의 실험에 임의의 점수·순위를 붙이지 않았습니다. 단일 입력의 결과를 모든 입력에 일반화할 수 없습니다. 보관 만료된 파일은 다시 확보해야 재현할 수 있습니다.');
-  if(notes.length)parts.push('## 모델의 참고 해석',...notes.map(n=>`- 실행 ${n.runId}: ${line(n.interpretation)}\n  위 해석은 추가 검증 결과가 아니며 실제 출력·사용자 피드백을 우선합니다.`));
-  parts.push('## 재현용 실행 레시피',...recipes.map(r=>r.available?r.markdown:r.reason));
-  return parts.join('\n\n');
+export function singleRunReport(s,recipes=[],notes=[]) {
+ const r=s.runs[0],job=s.jobs.find(j=>j.id===r.jobId),goal=s.goals.find(g=>g.version===r.goalVersion);
+ const parts=[`# ${line(job?.title||r.title)} — 단건 실행 리포트`, `대상: ${line(job?.url)}\n실행 ID: ${r.id}\n실행 버전: ${line(r.version)}\n작성 시각: ${new Date(s.capturedAt).toISOString()}`,
+ '## 실행 상태',states[r.state]||line(r.state),'## 목적과 조건',block(goal||{}),'## 입력',block(r.input||{}),'## 실제 결과 또는 오류',block(r.output??{error:r.error||r.state}),'## 조건별 검증',block(r.assessment||{}),'## 사용자 피드백',block(r.feedback||{}),'## 실행 환경',block(r.environment||{}),
+ '## 측정 범위',`결과 출처: ${line(r.provenance)}\n소요 시간: ${r.durationMs==null?'미측정':r.durationMs+' ms (1회 왕복)'}\n외부 API 비용: ${r.cost?.externalMicros==null?'미확인':r.cost.kind==='user_declared_free'?'사용자 확인 무료 한도 (제공사 미검증)':'$'+(r.cost.externalMicros/1e6).toFixed(4)+' 예약 상한'}\nDaytona 청구액과 실행별 모델 비용은 미확인입니다. Nosana 직접 배포 GPU 임대료는 토큰 요금에 포함되지 않으며 제공사 배포 내역에서 별도로 확인해야 합니다.`,
+ '단일 실행 기록이며 모든 입력의 성공을 보장하지 않습니다. 사용자 등록 결과는 자동 검증과 구분됩니다.'];
+ if(notes.length)parts.push('## 참고 해석',...notes.map(n=>line(n.interpretation)));
+ parts.push('## 확인된 실행 방법',...recipes.map(r=>r.available?r.markdown:r.reason));return parts.join('\n\n');
 }

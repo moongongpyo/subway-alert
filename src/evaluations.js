@@ -8,7 +8,7 @@ import { validateURL, safeRequest } from './network.js';
 import { responseSample } from './analyze.js';
 import { evaluation, putEvaluation, records, putRecord, getRecord, idempotent, digest, EvaluationFiles } from './evaluation-data.js';
 import { GoalInput, FeedbackInput, ExperimentAnalysis, ExperienceAnalysis, NextExperiments, SearchQuery, AlternativeAnalysis, ReportNotes, assess } from './evaluation-contracts.js';
-import { makeRecipe, comparisonReport } from './reports.js';
+import { makeRecipe, singleRunReport } from './reports.js';
 import { PRESENTATION_TASK, presentationSample, renderPresentation } from './result-presentation.js';
 import { ExperimentPrefetch } from './experiment-prefetch.js';
 
@@ -227,17 +227,20 @@ export class Evaluations {
   recipe(eid,owner,jobId){this.get(eid,owner);const j=this.store.get(jobId);if(!j||j.evaluationId!==eid)fail('NOT_FOUND','체험을 찾을 수 없습니다.',404);return makeRecipe(this.clean(j,eid));}
   report(eid,owner,body){
     if(body.format!=='md')fail('UNSUPPORTED_FORMAT','현재는 Markdown 형식만 지원합니다.');
-    const s=this.snapshot(eid,owner),selected=new Set(body.runIds||s.runs.map(r=>r.id));if([...selected].some(id=>!s.runs.some(r=>r.id===id)))fail('NOT_FOUND','선택한 실행 기록이 없습니다.',404);
-    s.runs=s.runs.filter(r=>selected.has(r.id));if(!s.runs.length)fail('NO_RESULTS','실험 결과를 먼저 기록해주세요.');
-    s.runs=s.runs.filter(r=>r.state!=='running');if(!s.runs.length)fail('NO_RESULTS','실행이 끝난 결과를 선택해주세요.');
-    let fingerprint=digest({goals:s.goals,runs:s.runs,selection:s.selection,format:body.format,ai:body.ai===true});
+    const s=this.snapshot(eid,owner);
+    if(body.runIds&&(!Array.isArray(body.runIds)||body.runIds.length!==1))fail('INVALID_INPUT','실행 한 건만 선택해주세요.');
+    const runId=body.runId||body.runIds?.[0],candidates=s.runs.filter(r=>(!body.jobId||r.jobId===body.jobId)&&r.state!=='running');
+    const run=runId?candidates.find(r=>r.id===runId):candidates.at(-1);
+    if(!run)fail('NO_RESULTS','완료된 실행 결과 한 건이 필요합니다.');
+    s.runs=[run];s.jobs=s.jobs.filter(j=>j.id===run.jobId);s.transitions=[];s.selection=null;
+    let fingerprint=digest({kind:'single-run',goals:s.goals,runs:s.runs,format:body.format,ai:body.ai===true});
     const existing=records(this.db,eid,'report').find(r=>r.fingerprint===fingerprint);if(existing&&existing.expiresAt>Date.now()&&!(body.retry===true&&['FAILED','CANCELLED'].includes(existing.state)))return existing;if(existing)fingerprint=digest({fingerprint,regeneration:records(this.db,eid,'report').length});
     if(records(this.db,eid,'report').length>=10)fail('LIMIT','보관 가능한 리포트 10개 한도입니다.');
     s.capturedAt=Date.now();const recipes=[...new Set(s.runs.map(r=>r.jobId))].map(id=>this.recipe(eid,owner,id)),expiresAt=Math.min(s.expiresAt,Date.now()+7*86400_000);
-    const render=notes=>{const markdown=comparisonReport(s,recipes,notes);if(Buffer.byteLength(markdown)>5_000_000)fail('REPORT_TOO_LARGE','리포트가 5MB를 초과합니다. 포함할 실험 수를 줄여주세요.');return {markdown,snapshotRevision:s.revision,runIds:s.runs.map(r=>r.id),expiresAt,format:'md'};};
+    const render=notes=>{const markdown=singleRunReport(s,recipes,notes);if(Buffer.byteLength(markdown)>5_000_000)fail('REPORT_TOO_LARGE','리포트가 5MB를 초과합니다. 포함할 실험 수를 줄여주세요.');return {markdown,snapshotRevision:s.revision,runIds:s.runs.map(r=>r.id),expiresAt,format:'md'};};
     if(!body.ai)return this.store.tx(()=>putRecord(this.db,eid,'report',{...render([]),fingerprint,state:'COMPLETED',createdAt:Date.now()}));
     return this.task(eid,owner,'report',fingerprint,{expiresAt,format:'md',runIds:s.runs.map(r=>r.id)},async(id,signal)=>{
-      const result=await this.models.ask(id,'R','Write brief comparison interpretations anchored to the supplied run IDs, expectations and feedback. Do not invent metrics, costs, rankings, final choices or test results. Distinguish conditions and unknowns. These are supplementary notes; deterministic report contains actual facts.',{goals:s.goals,runs:s.runs.map(r=>({id:r.id,title:r.title,assessment:r.assessment,feedback:r.feedback,changes:r.changes,output:responseSample(r.output,1500)}))},ReportNotes,{signal});return render(result.notes.filter(n=>s.runs.some(r=>r.id===n.runId)));});
+      const result=await this.models.ask(id,'R','Write a brief single-run interpretation anchored to the supplied run IDs, expectations and feedback. Do not invent metrics, costs, rankings, final choices or test results. Distinguish conditions and unknowns. These are supplementary notes; deterministic report contains actual facts.',{goals:s.goals,runs:s.runs.map(r=>({id:r.id,title:r.title,assessment:r.assessment,feedback:r.feedback,changes:r.changes,output:responseSample(r.output,1500)}))},ReportNotes,{signal});return render(result.notes.filter(n=>s.runs.some(r=>r.id===n.runId)));});
   }
   select(eid,owner,body){return this.store.tx(()=>{const e=this.get(eid,owner),j=this.jobs(eid).find(j=>j.id===body.jobId);if(!j)fail('NOT_FOUND','선택할 도구를 찾을 수 없습니다.',404);e.selection={jobId:j.id,title:j.plan?.title||j.url,reason:String(body.reason||'').slice(0,2000),at:Date.now()};return putEvaluation(this.db,e);});}
   async cancelTask(eid,owner,id){this.get(eid,owner);const j=this.store.get(id);if(!j||j.evaluationId!==eid||!j.taskType)fail('NOT_FOUND','분석 작업을 찾을 수 없습니다.',404);this.running.get(id)?.abort();if(PREPARING.has(j.state))this.store.update(id,x=>{x.state='CANCELLED';x.activeSince=null;});}

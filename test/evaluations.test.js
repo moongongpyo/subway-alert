@@ -95,9 +95,9 @@ test('recommendations require exact source evidence and transitions start an iso
   const task=f.e.analyze(f.eid,'local',{jobId:f.j.id,mode:'alternatives',url:'https://example.org/docs'});await finish(f.e,task);const card=records(f.s.db,f.eid,'suggestion')[0];assert.equal(card.source.quote,source);
   const next=f.e.transition(f.eid,'local',{suggestionId:card.id},'transition-key',{});assert.notEqual(next.id,f.j.id);assert.equal(next.evaluationId,f.eid);assert.equal(next.state,'ANALYZING');assert.equal(f.s.secret(next.id),null);assert.equal(f.counts().invokes,0);assert.equal(f.e.transition(f.eid,'local',{suggestionId:card.id},'transition-key',{}).id,next.id);
 });
-test('comparison report freezes results, never invents scores or costs and excludes secrets',async t=>{
+test('single-run report freezes results, never invents scores or costs and excludes secrets',async t=>{
   const f=fixture(t);goal(f.e,f.eid);f.s.secret(f.j.id,'sensitive-key-value');const run=await f.e.run(f.eid,'local',draft(f).id,'report-run');
-  const r=f.e.report(f.eid,'local',{format:'md',runIds:[run.id]});assert.equal(r.state,'COMPLETED');assert.match(r.markdown,/확인 불가/);assert.match(r.markdown,/최종 선택 미정/);assert.ok(!r.markdown.includes('sensitive-key-value'));assert.ok(!r.markdown.includes('invented-do-not-copy'));assert.equal(f.counts().models,0);
+  const r=f.e.report(f.eid,'local',{format:'md',runIds:[run.id]});assert.equal(r.state,'COMPLETED');assert.match(r.markdown,/미확인/);assert.match(r.markdown,/단건 실행 리포트/);assert.ok(!r.markdown.includes("최종 선택"));assert.ok(!r.markdown.includes('sensitive-key-value'));assert.ok(!r.markdown.includes('invented-do-not-copy'));assert.equal(f.counts().models,0);
   f.e.feedback(f.eid,'local',run.id,{version:0,satisfaction:'satisfied',note:'NEW-FEEDBACK',conditions:[]});assert.ok(!f.e.record(f.eid,r.id,'report').markdown.includes('NEW-FEEDBACK'));assert.throws(()=>f.e.report(f.eid,'local',{format:'pdf'}),{code:'UNSUPPORTED_FORMAT'});
 });
 test('manual original UI results are labelled and never fabricate measured duration',async t=>{
@@ -120,5 +120,11 @@ test('restart marks pending executions unknown without replay; deletion removes 
 test('HTTP extension persists goals, runs and downloadable Markdown with no model request',async t=>{
   const f=fixture(t),{app}=createApp({store:f.s,models:f.model,sandboxes:f.sb,orchestrator:f.o,evaluationOptions:{autoExperience:false}});const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));t.after(()=>{server.closeAllConnections();server.close();});const base=`http://127.0.0.1:${server.address().port}`;
   const index=await fetch(base),cookie=index.headers.get('set-cookie').split(';')[0];const request=async(path,body,key)=>{const r=await fetch(base+path,{method:body?'POST':'GET',headers:{cookie,'Content-Type':'application/json','X-Playground-Request':'1',...(key?{'Idempotency-Key':key}:{})},body:body?JSON.stringify(body):undefined});assert.ok(r.ok,await r.clone().text());return r;};
-  const prefix=`/api/evaluations/${f.eid}`;await request(prefix+'/goals',{purpose:'내용 보존',version:0,conditions:[]});const ex=await(await request(prefix+'/experiments',{jobId:f.j.id,input:{text:'hello'}})).json();const run=await(await request(prefix+`/experiments/${ex.id}/runs`,{},'http-extension-run')).json();assert.equal(run.state,'succeeded');const report=await(await request(prefix+'/reports',{format:'md'})).json();const file=await request(prefix+`/reports/${report.id}/download`);assert.match(file.headers.get('content-type'),/text\/markdown/);assert.match(await file.text(),/비교 리포트/);assert.equal(f.counts().models,0);
+  const prefix=`/api/evaluations/${f.eid}`;await request(prefix+'/goals',{purpose:'내용 보존',version:0,conditions:[]});const ex=await(await request(prefix+'/experiments',{jobId:f.j.id,input:{text:'hello'}})).json();const run=await(await request(prefix+`/experiments/${ex.id}/runs`,{},'http-extension-run')).json();assert.equal(run.state,'succeeded');const report=await(await request(prefix+'/reports',{format:'md'})).json();const file=await request(prefix+`/reports/${report.id}/download`);assert.match(file.headers.get('content-type'),/text\/markdown/);assert.match(await file.text(),/단건 실행 리포트/);assert.equal(f.counts().models,0);
 });
+
+ test('single-run report defaults to latest completed run and rejects multiple results',async t=>{
+ const f=fixture(t);const a=await f.e.run(f.eid,'local',draft(f).id,'single-first');const b=await f.e.run(f.eid,'local',draft(f).id,'single-second');
+ const report=f.e.report(f.eid,'local',{format:'md',jobId:f.j.id});assert.deepEqual(report.runIds,[b.id]);assert.ok(!report.markdown.includes(a.id));
+ assert.throws(()=>f.e.report(f.eid,'local',{format:'md',runIds:[a.id,b.id]}),{code:'INVALID_INPUT'});
+ });

@@ -3,10 +3,9 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-healthcheckPath = "/actuator/health"
+startCommand = "node src/server.js"
+healthcheckPath = "/healthz"
 healthcheckTimeout = 180
+numReplicas = 1
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
-numReplicas = 1
-# Legacy reference only. New Railway services must configure these values in the dashboard.
-# Config-as-Code opt-in was disabled for new services on 2026-08-28.

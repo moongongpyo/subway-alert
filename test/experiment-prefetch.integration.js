@@ -1,0 +1,52 @@
+// Real Chromium + HTTP/UI, isolated data and delayed model fixtures; no paid calls.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { chromium } from 'playwright';
+import { Store } from '../src/store.js';
+import { createApp } from '../src/server.js';
+import { records } from '../src/evaluation-data.js';
+
+test('cards appear before slow result HTML, then one selected step is prepared without executing it',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'pg-prefetch-browser-')),store=new Store(dir);
+  let calls=0,invokes=0;const pending=[];
+  const answer=input=>({summary:'문자열 조건 확인',questions:['한글도 보존되나요?'],assessments:[],html:'<main><h2 data-value="/text"></h2></main>',css:'',cards:['한글','긴 문장','기호'].map(title=>({kind:'coverage',title:input+' · '+title,reason:'아직 확인하지 않은 입력 조건',check:'입력한 내용의 보존',changes:[{field:'text',valueJson:JSON.stringify(input+' '+title),evidence:'Text to return'}],requiresInput:[],asset:null}))});
+  const models={ask:async(_id,_role,_prompt,ctx,schema,{signal})=>{calls++;if(ctx.pendingResult)return schema.parse(answer(ctx.preparedInput.text));return new Promise((resolve,reject)=>{pending.push(()=>resolve(schema.parse(answer(ctx.preparedInput.text))));signal.addEventListener('abort',()=>reject(new Error('test cancelled')),{once:true});});}};
+  const sandboxes={invoke:async(_id,input)=>{invokes++;return {status:200,data:{text:input.text}};}};
+  const orchestrator={start(){},cancel(){}};
+  const {app,evaluations}=createApp({store,models,sandboxes,orchestrator});
+  const j=store.create('local','https://example.com/docs','browser-prefetch');
+  store.update(j.id,j=>{j.state='READY';j.activeSince=null;j.version=j.verifiedVersion='v1';j.expiresAt=Date.now()+3600_000;j.source={text:'Text to return'};j.sample={text:'first'};j.plan={title:'실험 UI fixture',capability:'테스트 데이터 반환',kind:'api',hasUI:false,runtime:'none',database:{kind:'none'},endpoint:{url:'https://example.com/api',method:'GET'},fields:[{name:'text',label:'텍스트',type:'text',location:'query',required:true,example:'first',description:'Text to return'}]};});
+  app.get('/__prefetch-test',(_req,res)=>res.type('html').send('<!doctype html><html lang="ko"><meta charset="utf-8"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/evaluation.css"><body><main id="panel" style="max-width:1000px;margin:40px auto"></main><script type="module" src="/__prefetch-test.js"></script></body></html>'));
+  app.get('/__prefetch-test.js',(_req,res)=>res.type('js').send(`import {EvaluationPanel} from '/evaluation.js';
+    const api=async(path,options={})=>{const r=await fetch(path,{...options,headers:{'Content-Type':'application/json','X-Playground-Request':'1',...options.headers}});const body=await r.json();if(!r.ok)throw new Error(body.error);return body;};
+    let lastRun=null;const navigation={changed(data){const run=data.runs.at(-1);if(run&&run.id!==lastRun){lastRun=run.id;panel.stage=3;}},draft(){panel.stage=2;},move(stage){panel.stage=stage;panel.render();}};
+    const panel=new EvaluationPanel(document.querySelector('#panel'),api,()=>{},navigation);window.panel=panel;
+    await panel.show(await api('/api/jobs/${j.id}'));
+  `));
+  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
+  let browser;
+  t.after(async()=>{await browser?.close();for(const v of evaluations.running.values())v?.abort?.();await Promise.allSettled([...evaluations.running.values()].map(v=>v?.promise).filter(Boolean));server.closeAllConnections();await new Promise(r=>server.close(r));store.close();rmSync(dir,{recursive:true,force:true});});
+  browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1280,height:960}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto(`http://127.0.0.1:${server.address().port}/__prefetch-test`);
+  await page.waitForFunction(()=>window.panel?.data?.analyses.some(a=>a.mode==='prefetch'&&a.state==='COMPLETED'));
+  assert.equal(calls,1);assert.equal(invokes,0);
+  await page.getByRole('button',{name:'이 요청 실행 →'}).click();
+  await page.getByRole('button',{name:'이 실험 준비하기'}).first().waitFor();
+  assert.equal(await page.getByRole('button',{name:'이 실험 준비하기'}).count(),3);
+  assert.equal(await page.getByText('다음에 확인할 조건 3가지를 구성하고 있어요…').count(),0);
+  assert.equal(pending.length,1);assert.equal(invokes,1);
+  await page.getByText('함께 확인해볼 질문').click();assert.equal(await page.getByText('한글도 보존되나요?').isVisible(),true);
+  await page.getByRole('button',{name:'이 실험 준비하기'}).first().click();
+  await page.waitForFunction(()=>window.panel?.data?.analyses.filter(a=>a.mode==='prefetch'&&a.state==='COMPLETED').length===2);
+  assert.equal(await page.getByLabel('텍스트').inputValue(),'first 한글');assert.equal(calls,3);assert.equal(invokes,1);
+  // Finishing background work must preserve the user's draft and current step.
+  pending.shift()();await page.waitForFunction(()=>window.panel?.data?.analyses.some(a=>a.mode==='experience'&&a.state==='COMPLETED'));
+  assert.equal(await page.getByLabel('텍스트').inputValue(),'first 한글');
+  await page.getByRole('button',{name:'이 요청 실행 →'}).click();
+  await page.getByRole('heading',{name:'first 한글 · 한글',exact:true}).waitFor();assert.equal(invokes,2);assert.equal(calls,4);
+  assert.equal(records(store.db,j.evaluationId,'analysis').filter(a=>a.mode==='prefetch').length,2);
+  assert.deepEqual(errors,[]);pending.shift()();
+});

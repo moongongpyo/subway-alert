@@ -1,0 +1,13 @@
+.env
+.env.*
+.git/
+.codex/
+.agents/
+.deploy/
+data/
+logs/
+node_modules/
+test-results/
+playwright-report/
+coverage/
+*.log

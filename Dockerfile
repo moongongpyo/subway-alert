@@ -1,16 +1,11 @@
-FROM eclipse-temurin:21-jdk AS build
-WORKDIR /workspace
-COPY gradlew build.gradle settings.gradle ./
-COPY gradle ./gradle
-RUN chmod +x gradlew
-COPY src ./src
-RUN ./gradlew --no-daemon bootJar
-
-FROM eclipse-temurin:21-jre
+FROM node:24-bookworm-slim
 WORKDIR /app
-RUN mkdir -p /app/data && useradd --system --uid 10001 app && chown -R app:app /app
-COPY --from=build /workspace/build/libs/*-SNAPSHOT.jar /app/app.jar
-USER 10001
-ENV PORT=8080
-EXPOSE 8080
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "/app/app.jar"]
+ENV NODE_ENV=production PLAYWRIGHT_BROWSERS_PATH=/ms-playwright HOST=0.0.0.0
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npx playwright install --with-deps chromium && npm cache clean --force
+COPY src ./src
+COPY public ./public
+COPY sandbox ./sandbox
+RUN mkdir -p /app/data
+EXPOSE 3000
+CMD ["node", "src/server.js"]

@@ -1,0 +1,18 @@
+// Explicit UI-only fixture. No provider clients, real API calls, or user data.
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { Store } from '../src/store.js';
+import { createApp } from '../src/server.js';
+process.env.OPENAI_API_KEY='fixture-not-a-provider-key';process.env.DAYTONA_API_KEY='fixture-not-a-daytona-key';
+const dir=mkdtempSync(join(tmpdir(),'pg-ui-extension-')),store=new Store(dir);
+const fields=[{name:'text',label:'테스트 문장',type:'text',required:true,location:'query',example:'hello',description:'Text to transform'},{name:'count',label:'개수',type:'number',required:true,location:'query',example:'0',description:'Number of items'},{name:'enabled',label:'활성',type:'boolean',required:true,location:'query',example:'false',description:'Enable transformation'}];
+function ready(id){store.update(id,j=>{j.state='READY';j.activeSince=null;j.version='fixture-v1';j.verifiedVersion='fixture-v1';j.expiresAt=Date.now()+3600_000;j.source={serviceName:'Example API',text:'Text to transform. Number of items. Enable transformation.'};j.plan={title:'확장 기능 UI 검증 · 테스트 데이터',kind:'api',runtime:'none',hasUI:false,capability:'실제 외부 API가 아닌 격리된 UI 테스트입니다.',fields,auth:{kind:'none',name:'',instructions:'',issueUrl:''},database:{kind:'none'},endpoint:{method:'GET',url:'https://example.com/fixture'}};j.steps=[{id:'ready',label:'테스트 환경 준비',status:'completed'}];j.evidence=[{role:'B',version:j.version,description:'fixture 응답 검사'},{role:'E',version:j.version,description:'UI 테스트용 상태'}];j.sample={text:'hello',count:0,enabled:false};});}
+const first=store.create('local','https://example.com/ui-fixture','fixture-launch');ready(first.id);
+const original=store.create('local','https://example.com/original-ui-fixture','fixture-original');ready(original.id);store.update(original.id,j=>{j.source.serviceName='Example 웹앱';j.plan.hasUI=true;j.plan.title='원래 UI 단계 검증 · 테스트 데이터';j.preview='/fixture-original';});
+const stopped=store.create('local','https://example.com/stopped-ui-fixture','fixture-stopped');store.update(stopped.id,j=>{j.source={serviceName:'Example API'};j.state='FAILED';j.activeSince=null;j.reason='FIXTURE_STOPPED';j.message='목록 삭제·복원 검증용으로 중지된 테스트 체험입니다.';});
+const orchestrator={dir,start:id=>ready(id),cancel:async id=>store.update(id,j=>{j.state='CANCELLED';j.cleanupPending=false;})};
+const sandboxes={invoke:async(_id,input)=>({status:200,data:{text:input.text,count:input.count,enabled:input.enabled,empty:'',nullable:null,rows:[{name:'sample',value:0}]}})};
+const models={ask:async(id,role,_task,ctx,schema)=>{const r=store.reserve(id,role,'gpt-5.6-luna',200,300);store.settle(r.id,{input_tokens:200,output_tokens:200});return schema.parse({summary:'현재 입력을 유지하며 대문자 조건을 확인합니다.',questions:[],assessments:[],cards:[{kind:'coverage',title:'대문자 문장도 그대로 유지되는지 확인',reason:'기본 소문자 입력 이후의 관련 조건입니다.',check:'대문자 보존',changes:[{field:'text',valueJson:'"HELLO"',evidence:'Text to transform'}],requiresInput:[]}]});}};
+const {app}=createApp({store,models,sandboxes,orchestrator});app.get('/fixture-original',(_req,res)=>res.type('html').send('<!doctype html><html lang="ko"><title>원래 UI 테스트</title><body><h1>원래 프로젝트 화면 · 테스트용</h1><p>외부 요청 없이 수동 결과 등록과 단계 이동을 확인하는 화면입니다.</p></body></html>'));const server=app.listen(3005,'127.0.0.1',()=>{console.log('Isolated expansion UI fixture: http://127.0.0.1:3005/#'+first.id);console.log('Original UI fixture: http://127.0.0.1:3005/#'+original.id);});
+const stop=()=>{server.close();store.close();if(resolve(dir).startsWith(resolve(tmpdir()))&&dir.includes('pg-ui-extension-'))rmSync(dir,{recursive:true,force:true});process.exit(0);};process.on('SIGINT',stop);process.on('SIGTERM',stop);

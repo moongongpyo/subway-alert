@@ -1,0 +1,28 @@
+/* Evaluation surfaces inherit the shared typography, controls, and result viewer. */
+#evaluation-section{margin:26px 0 28px;scroll-margin-top:24px}
+.evaluation-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:22px;margin:26px 0 20px}
+.evaluation-heading h2{font-size:24px;font-weight:600;letter-spacing:-.7px;margin:8px 0}
+.evaluation-heading p{font-size:13px;color:var(--muted)}.evaluation-heading .pill{margin-top:14px;white-space:normal;text-align:right}
+.evaluation-card{padding:28px;border:1px solid var(--line);border-radius:11px;background:var(--surface);margin:18px 0;min-width:0}
+.evaluation-card>h3{font-size:16px;font-weight:600;letter-spacing:-.3px;margin:0 0 22px}
+.evaluation-card h4{font-size:13px;font-weight:600;margin:24px 0 13px}.evaluation-card>summary{cursor:pointer;font-size:14px;font-weight:550;line-height:1.75}
+.evaluation-card[open]>summary{margin-bottom:24px}.evaluation-card p{font-size:13px;line-height:1.85;overflow-wrap:anywhere}.evaluation-card .data-note{font-size:12px;color:var(--muted)}
+.evaluation-card .form-field{margin:19px 0}.evaluation-card .form-field label{font-size:13px}.evaluation-card .form-field small{font-size:12px}
+.evaluation-card input:not([type=checkbox]),.evaluation-card select,.evaluation-card textarea{border:1px solid #dcded4;border-radius:7px;padding:12px;background:#fdfdfa;color:var(--ink);max-width:100%;font-size:13px}
+.evaluation-card textarea{width:100%;resize:vertical}.evaluation-card input:disabled,.evaluation-card select:disabled,.evaluation-card textarea:disabled{background:var(--soft);color:var(--muted)}
+.evaluation-card details>summary{cursor:pointer;font-size:12px;line-height:1.8}.evaluation-card .secondary,.evaluation-card .text-button{font-size:12px}
+.evaluation-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:19px 0}
+.evaluation-grid{display:grid;grid-template-columns:minmax(240px,.85fr) minmax(0,1.4fr);gap:22px;align-items:start}.evaluation-grid>.evaluation-card{height:auto}
+.evaluation-grid .evaluation-card .evaluation-card{padding:19px;background:var(--bg)}
+.trial-tabs{display:flex;flex-wrap:wrap;gap:8px}.trial{padding:10px 14px;border:1px solid var(--line);background:#fff;border-radius:6px;font-size:12px;max-width:100%;overflow-wrap:anywhere}.trial:hover{background:var(--soft)}.trial.selected{background:var(--accent-soft);border-color:#dfb49f;color:var(--accent)}
+.condition-row{display:grid;grid-template-columns:minmax(0,1fr) 115px;align-items:center;gap:6px 16px;padding:15px 0;border-bottom:1px solid var(--line)}.condition-row label{font-size:13px}.condition-row .data-note{grid-column:1/-1;margin:0}
+.check-label{display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:1.8;margin:16px 0}.check-label input{margin-top:5px;accent-color:var(--accent);width:15px;height:15px;flex-shrink:0}
+.experiment-cards>.evaluation-card{background:#fdfdfb}.experiment-cards blockquote{margin:16px 0;padding:13px 16px;border-left:2px solid #c88b71;background:var(--accent-soft);border-radius:0 5px 5px 0;color:#79624f;font-size:12px;line-height:1.8;overflow-wrap:anywhere;max-height:180px;overflow:auto}
+.alternative-form,.selection-form{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:20px 0}.alternative-form input{flex:1;min-width:180px}.selection-form h4{width:100%}.selection-form input{flex:1;min-width:160px}
+.run-history{padding:18px 0;border-top:1px solid var(--line)}.run-history summary{line-height:1.8}
+.report-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 0;border-bottom:1px solid var(--line);font-size:13px}.report-choices{max-height:240px;overflow:auto}
+.evaluation-card pre{max-height:340px}.evaluation-card button:disabled{opacity:.45;cursor:not-allowed}.evaluation-card .pill{white-space:normal;line-height:1.6}.evaluation-card .error-text{color:var(--red)}
+.evaluation-card .pill.success{background:#edf5ea;border-color:#dce9d7;color:var(--green)}.evaluation-card .pill.warning{background:#fcf3df;border-color:#eddfba;color:#81611d}
+.evaluation-card td,.evaluation-card th,.evaluation-card .table-search{font-size:12px}.evaluation-card .table-toolbar,.evaluation-card .value-label,.evaluation-card .nested-count{color:var(--muted)}
+#evaluation-section[aria-busy=true]>.error-text:empty::after{content:'처리 중…';color:var(--muted)}
+@media(max-width:750px){.evaluation-heading{display:block}.evaluation-heading h2{font-size:21px}.evaluation-heading .pill{margin:4px 0}.evaluation-grid{grid-template-columns:1fr;gap:0}.evaluation-card{padding:20px}.evaluation-actions .primary{width:100%}.alternative-form{display:block}.alternative-form input{width:100%;margin-bottom:10px}.trial{font-size:11px}.report-row{align-items:flex-start;flex-direction:column}}

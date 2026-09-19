@@ -121,10 +121,11 @@ export class Orchestrator {
       this.store.update(id,x=>{x.viewer=viewer;});
     }
     if(p.database.kind!=='none')this.step(id,'database','running');
-    this.step(id,'execution','running');this.log(id,'필요한 패키지를 설치하고 실행 환경을 준비하고 있어요');
+    this.step(id,'execution','running');this.log(id,p.kind==='api'?'앱 서버의 API 호출과 입력 화면을 연결하고 있어요':'필요한 패키지를 설치하고 실행 환경을 준비하고 있어요');
     await this.sandboxes.boot(id,this.store.get(id).viewer);
-    this.step(id,'environment','completed','Daytona 샌드박스 생성 및 런타임 설치');
-    this.step(id,'execution','completed','실행 버전 health 확인');
+    const direct=this.store.get(id).executionMode==='node-api';
+    this.step(id,'environment','completed',direct?'Node.js 직접 API 호출 준비 · 샌드박스 사용 없음':'Daytona 샌드박스 생성 및 런타임 설치');
+    this.step(id,'execution','completed',direct?'HTTP 호출 계약과 실행 버전 연결':'실행 버전 health 확인');
     this.step(id,'database','completed','마이그레이션·시드·DB 쿼리 통과');
     this.step(id,'interface','completed','공통 UI와 입력 계약 연결');
     if(!p.hasUI){try{validateInput(p.fields,this.store.get(id).sample);}catch{await this.waitForKey(id,'검증에 사용할 필수 입력을 채워주세요.','sample');}}
@@ -173,7 +174,7 @@ export class Orchestrator {
     const directory=join(this.dir,'evidence');await mkdir(directory,{recursive:true});await writeFile(join(directory,id+'.png'),evidence.image);
     const {image,...details}=evidence;
     this.store.update(id,x=>{x.evidence.push({role:'E',at:Date.now(),...details,url:undefined,screenshot:undefined},publicEvidence);x.verifiedVersion=x.version;});
-    this.step(id,'browser','completed','샌드박스 Chromium 조작·결과 및 외부 프리뷰 접속 검증');
+    this.step(id,'browser','completed',direct?'앱 서버 Chromium 입력·실제 API 응답·공통 화면 검증':'샌드박스 Chromium 조작·결과 및 외부 프리뷰 접속 검증');
   }
   async waitForKey(id,message='API 키 입력이 필요해요',kind='credentials'){
     this.store.update(id,j=>{j.state='WAITING_FOR_USER';j.waitKind=kind;j.waitSequence=(j.waitSequence||0)+1;j.waitUntil=Math.min(Date.now()+j.policy.waitingMs,j.createdAt+j.policy.waitingMs+j.policy.activeMs);j.activeSpent+=j.activeSince?Date.now()-j.activeSince:0;j.activeSince=null;j.message=message;const s=j.steps.find(s=>s.id===(kind==='sample'?'function':'credentials'));if(s)s.status='waiting_input';});

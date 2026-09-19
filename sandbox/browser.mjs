@@ -4,7 +4,7 @@ const config=JSON.parse(readFileSync(process.argv[2],'utf8'));
 let browser,actions=0,stage='launch';
 try {
   browser=await chromium.launch({headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
-  const context=await browser.newContext({viewport:{width:1280,height:850},ignoreHTTPSErrors:false,extraHTTPHeaders:{'X-Daytona-Skip-Preview-Warning':'true'}});
+  const context=await browser.newContext({viewport:{width:1280,height:850},ignoreHTTPSErrors:false,extraHTTPHeaders:{'X-Daytona-Skip-Preview-Warning':'true',...(config.controlToken?{'X-Control-Token':config.controlToken}:{})}});
   // Test the service inside its own sandbox; public ingress is checked independently.
   await context.route('**/*',route=>new URL(route.request().url()).origin===new URL(config.url).origin?route.continue():route.abort('blockedbyclient'));
   const page=await context.newPage();page.setDefaultTimeout(15_000);
@@ -68,6 +68,6 @@ try {
     }
     if(failures.length)throw new Error(failures.slice(0,3).join('; '));
     await page.screenshot({path:config.screenshot,fullPage:false});actions++;
-    console.log(JSON.stringify({passed:true,actions,url:config.url,version:config.version,scope:'sandbox-local',scenario:config.scenario||'입력 → 실행 → 결과 → 원본 보기',screenshot:config.screenshot}));
+    console.log(JSON.stringify({passed:true,actions,url:config.url,version:config.version,scope:config.scope||'sandbox-local',scenario:config.scenario||'입력 → 실행 → 결과 → 원본 보기',screenshot:config.screenshot}));
   }
 }catch(e){console.log(JSON.stringify({passed:false,actions,error:e.message,code:['EXTERNAL_UNREACHABLE','EXTERNAL_CALL_LIMIT','EXTERNAL_BUDGET_REQUIRED','HTTP_AUTH_CONFIRMATION_REQUIRED'].includes(e.code)?e.code:stage==='launch'?'BROWSER_RUNNER_FAILED':stage==='navigation'?'BROWSER_UNREACHABLE':'BROWSER_FAILED'}));process.exitCode=1;}finally{await browser?.close();}

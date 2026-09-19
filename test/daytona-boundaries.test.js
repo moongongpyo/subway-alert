@@ -70,11 +70,11 @@ test('public preview requires matching version and the actual deployed HTML and 
   assert.equal((await boxes.verifyPreview(job.id)).role,'P');corrupt=true;await assert.rejects(boxes.verifyPreview(job.id),{code:'PREVIEW_FAILED'});
 });
 
-test('exhausted infrastructure blocks preparation before model work or a new project is created',t=>{
+test('exhausted infrastructure blocks sandbox reservation after classification but allows URL analysis',t=>{
   const {store,job}=fixture(t);store.reserveInfrastructure(job.id);store.update(job.id,j=>j.state='FAILED');
-  const before=store.db.prepare('SELECT COUNT(*) n FROM evaluations').get().n;
-  assert.throws(()=>store.create('local','https://example.org','budget-preflight',{sandboxDailyMinutes:100}),{code:'INFRA_BUDGET'});
-  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM evaluations').get().n,before);assert.equal(store.usage(job.id).calls,0);
+  const next=store.create('local','https://example.org','budget-preflight',{sandboxDailyMinutes:100});
+  assert.equal(next.state,'ANALYZING');assert.throws(()=>store.reserveInfrastructure(next.id),{code:'INFRA_BUDGET'});
+  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM infrastructure').get().n,1);assert.equal(store.usage(job.id).calls,0);
 });
 
 test('demo infrastructure defaults admit new work without erasing earlier reservations',t=>{
@@ -90,7 +90,8 @@ test('demo concurrent sandbox allowance remains bounded at ten environments',t=>
   const {store,job}=fixture(t);store.update(job.id,j=>{j.state='READY';j.sandboxId='fixture-0';});
   for(let i=1;i<10;i++){const next=store.create('local','https://example.org','concurrent-demo-'+i);store.update(next.id,j=>{j.state='READY';j.sandboxId='fixture-'+i;});}
   assert.equal(store.infrastructureStatus().active,10);assert.equal(store.infrastructureStatus().available,false);
-  assert.throws(()=>store.create('local','https://example.org','eleventh-environment'),{code:'INFRA_BUDGET'});
+  const next=store.create('local','https://example.org','eleventh-environment');
+  assert.throws(()=>store.reserveInfrastructure(next.id),{code:'INFRA_BUDGET'});
 });
 
 test('a sandbox returned after cancellation is retained for cleanup and never booted',async t=>{

@@ -25,15 +25,23 @@ export function validatePlan(p, source) {
   if(!p.supported) fail('UNSUPPORTED',p.reason||'이 프로젝트는 현재 지원하지 않습니다.');
   if(p.kind!==source.kind) fail('INVALID_PLAN','분석 결과의 입력 유형이 원본과 다릅니다.');
   if(p.kind==='api') {
-    const u=planURL(p.endpoint.url,'API 호출 URL');
+    let u=planURL(p.endpoint.url,'API 호출 URL');
     if(!p.endpoint.readOnly) fail('UNSUPPORTED','상태를 변경하는 API는 자동 검증 대상에서 제외합니다.');
     if(p.hasUI||p.database.kind!=='none'||p.auth.kind==='env') fail('INVALID_PLAN','API 실행 계약이 맞지 않습니다.');
     if(p.files.length||p.install.length||p.start||p.adapter||p.runtime!=='none')fail('INVALID_PLAN','API 체험은 검증된 공통 실행기만 사용하며 임의 코드를 설치하거나 실행하지 않습니다.');
-    if(source.direct && u.href!==source.url) fail('INVALID_PLAN','직접 입력한 API 대상과 분석 주소가 다릅니다.');
+    if(source.direct){
+      const observed=planURL(source.url,'직접 입력한 API URL');
+      if(u.origin!==observed.origin||u.pathname!==observed.pathname||p.endpoint.method!=='GET')fail('INVALID_PLAN','직접 확인한 GET API 대상과 분석 주소·메서드가 다릅니다.');
+      // The collector already observed this exact GET URL. Preserve its actual
+      // query, rather than asking a model to reproduce encoding/order/defaults.
+      p.endpoint.url=observed.href;u=observed;
+    }
     if(!source.direct && !observedApiOrigin(u.href,source)) fail('INVALID_PLAN',`수집된 문서 본문·호출 링크·API 명세에서 ${u.origin}의 근거를 찾지 못했습니다. 실제로 확인된 호출 주소를 사용해주세요.`);
     // Observed query values are editable examples, not invisible locked inputs.
     for(const [name,value] of u.searchParams){
-      if(p.fields.some(f=>f.name===name)||name===p.auth.name||/key|token|secret|password|signature|credential/i.test(name)||u.searchParams.getAll(name).length!==1||!/^[a-zA-Z_][\w.-]{0,63}$/.test(name)||['__proto__','constructor','prototype'].includes(name))continue;
+      if(name===p.auth.name||/key|token|secret|password|signature|credential/i.test(name)||u.searchParams.getAll(name).length!==1||!/^[a-zA-Z_][\w.-]{0,63}$/.test(name)||['__proto__','constructor','prototype'].includes(name))continue;
+      const field=p.fields.find(f=>f.name===name);
+      if(field){if(source.direct){field.location='query';field.example=value;}continue;}
       if(p.fields.length>=16)break;
       p.fields.push({name,label:name,type:'text',required:false,location:'query',example:value,description:`요청 URL의 ${name} 쿼리 매개변수. 원래 입력: ${value.slice(0,120)}`});
     }
@@ -62,7 +70,7 @@ export function validatePlan(p, source) {
   return p;
 }
 export function stepsFor(p) {
-  const steps=[['analysis','URL 분석','A'],['environment','환경 준비','F']];
+  const steps=[['analysis','URL 분석','A'],['environment',p.kind==='api'?'API 호출 준비':'환경 준비','F']];
   if(p.auth.kind!=='none') steps.push(['credentials','인증 연결','C']);
   if(p.database.kind!=='none') steps.push(['database','DB 준비','F']);
   if(!p.hasUI) steps.push(['interface','화면 구성','D']);

@@ -9,6 +9,17 @@ import {records,putRecord} from '../src/evaluation-data.js';
 import { Orchestrator } from '../src/orchestrator.js';
 import { apiAccessOffer } from '../src/api-access.js';
 
+test('URL submissions do not require Daytona configuration or available sandbox quota',async t=>{
+  const saved=Object.fromEntries(['MODEL_PROVIDER','OPENAI_API_KEY','DAYTONA_API_KEY','DAYTONA_DAILY_MINUTES'].map(k=>[k,process.env[k]]));
+  Object.assign(process.env,{MODEL_PROVIDER:'openai',OPENAI_API_KEY:'fixture-model',DAYTONA_DAILY_MINUTES:'1'});delete process.env.DAYTONA_API_KEY;
+  const dir=mkdtempSync(join(tmpdir(),'pg-api-admission-')),store=new Store(dir),started=[];
+  const {app}=createApp({store,models:{},orchestrator:{start:id=>started.push(id)}}),server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
+  t.after(()=>{server.closeAllConnections();server.close();store.close();rmSync(dir,{recursive:true,force:true});for(const [k,v]of Object.entries(saved)){if(v===undefined)delete process.env[k];else process.env[k]=v;}});
+  const base=`http://127.0.0.1:${server.address().port}`,home=await fetch(base),cookie=home.headers.get('set-cookie').split(';')[0];
+  const response=await fetch(base+'/api/jobs',{method:'POST',headers:{cookie,'Content-Type':'application/json','X-Playground-Request':'1','Idempotency-Key':'api-no-daytona'},body:JSON.stringify({url:'https://api.open-meteo.com/v1/forecast'})});
+  assert.equal(response.status,202);const j=await response.json();assert.deepEqual(started,[j.id]);assert.equal(store.infrastructureStatus({sandboxDailyMinutes:1}).available,false);assert.equal(store.db.prepare('SELECT COUNT(*) n FROM infrastructure').get().n,0);
+});
+
 test('API connection is owner-scoped, requires consent, and never returns or persists the plaintext key in job data',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'pg-connect-http-')),store=new Store(dir),orchestrator=new Orchestrator(store,{},{}),{app}=createApp({store,models:{},sandboxes:{},orchestrator}),server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
   t.after(()=>{server.closeAllConnections();server.close();store.close();rmSync(dir,{recursive:true,force:true});});

@@ -61,7 +61,8 @@ export class Store {
     return this.tx(() => {
       const same = this.db.prepare('SELECT doc FROM jobs WHERE owner=? AND dedup=?').get(owner, dedup);
       if (same) {const previous=JSON.parse(same.doc);if(previous.url!==url||previous.taskType!==metadata.taskType||metadata.evaluationId&&previous.evaluationId!==metadata.evaluationId)fail('CONFLICT','같은 요청 ID의 내용이 변경됐습니다.',409);return previous;}
-      if(!metadata.taskType)this.assertInfrastructure({...POLICY,...extra});
+      // The URL may describe an API: reserve Daytona only after classification,
+      // at Sandboxes.create(), never for direct API calls or model-only tasks.
       const all=this.all(),e=metadata.evaluationId?evaluation(this.db,metadata.evaluationId,owner):createEvaluation(this.db,owner);
       if(metadata.taskType){
         const tasks=all.filter(j=>j.evaluationId===e.id&&j.taskType);
@@ -156,7 +157,7 @@ export class Store {
     const active=this.all().filter(j=>(j.sandboxId||j.sandboxName)&&!j.cleanedAt).length,max=policy.maxSandboxes??POLICY.maxSandboxes;
     return {used,limit,reservation,active,max,available:used+reservation<=limit&&active<max,resetsAt:new Date(new Date().setUTCHours(24,0,0,0)).toISOString()};
   }
-  assertInfrastructure(policy){const s=this.infrastructureStatus(policy);if(!s.available)fail('INFRA_BUDGET',s.used+s.reservation>s.limit?`오늘 Daytona 예약 한도 ${s.limit}분 중 ${s.used}분을 사용했습니다. 한도 초기화: ${s.resetsAt}. 모델 분석을 시작하지 않았습니다.`:'동시 샌드박스 한도에 도달했습니다. 기존 환경 정리 후 다시 시도해주세요.');}
+  assertInfrastructure(policy){const s=this.infrastructureStatus(policy);if(!s.available)fail('INFRA_BUDGET',s.used+s.reservation>s.limit?`오늘 Daytona 예약 한도 ${s.limit}분 중 ${s.used}분을 사용했습니다. 한도 초기화: ${s.resetsAt}. API 직접 호출은 계속 이용할 수 있습니다.`:'동시 샌드박스 한도에 도달했습니다. 기존 환경 정리 후 다시 시도해주세요. API 직접 호출은 계속 이용할 수 있습니다.');}
   secret(id, value) {
     if (value === undefined) {
       const row=this.db.prepare('SELECT value FROM secrets WHERE job=?').get(id); if(!row) return null;

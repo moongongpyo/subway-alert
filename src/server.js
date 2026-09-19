@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { Store, redact } from './store.js';
 import { Models } from './model.js';
 import { modelConfiguration } from './nosana.js';
-import { Sandboxes } from './daytona.js';
+import { ExecutionEnvironments } from './execution-environments.js';
 import { Orchestrator } from './orchestrator.js';
 import { validateURL } from './network.js';
 import { validateInput } from './contracts.js';
@@ -13,7 +13,7 @@ import { Evaluations } from './evaluations.js';
 import { hostingConfig, hostingGate } from './hosting.js';
 
 export function createApp({store=new Store(),models,sandboxes,orchestrator,hosting=hostingConfig(),evaluationOptions={}}={}) {
-  models??=new Models(store);sandboxes??=new Sandboxes(store);orchestrator??=new Orchestrator(store,models,sandboxes);
+  models??=new Models(store);sandboxes??=new ExecutionEnvironments(store);orchestrator??=new Orchestrator(store,models,sandboxes);
   const evaluations=new Evaluations(store,models,sandboxes,orchestrator,evaluationOptions);orchestrator.evaluations=evaluations;
   const app=express();app.disable('x-powered-by');
   app.use(hostingGate(hosting));
@@ -40,7 +40,7 @@ export function createApp({store=new Store(),models,sandboxes,orchestrator,hosti
     const rootFailure=[...(j.failures||[])].reverse().find(f=>!['BUDGET_EXCEEDED','NO_PROGRESS'].includes(f.code));
     const oldFailure=[...(j.journal||[])].reverse().find(f=>f.exitCode&&f.error);
     if(rootFailure)copy.primaryFailure=rootFailure.message;else if(oldFailure){try{copy.primaryFailure=JSON.parse(oldFailure.error.trim().split('\n').at(-1)).error;}catch{copy.primaryFailure=oldFailure.error.slice(-1000);}}
-    for(const key of ['owner','controlToken','previewToken','databaseUrl','source','sessions','root','sandboxName','lastFailure','journal','recipeFiles'])delete copy[key];
+    for(const key of ['owner','controlToken','previewToken','databaseUrl','source','sessions','root','sandboxName','lastFailure','journal','recipeFiles','apiInvocation'])delete copy[key];
     if(copy.plan){copy.plan={...copy.plan};for(const key of ['files','install','start','adapter'])delete copy.plan[key];copy.plan.database={kind:copy.plan.database.kind};}
     if(copy.state!=='READY')delete copy.preview;
     const safe=redact(copy,[store.secret(j.id),j.controlToken,j.previewToken,j.databaseUrl,process.env.OPENAI_API_KEY,process.env.DAYTONA_API_KEY]);
@@ -52,7 +52,7 @@ export function createApp({store=new Store(),models,sandboxes,orchestrator,hosti
   app.get('/api/config',(_req,res)=>res.json({configured:config(),limits:{jobUSD:POLICY.jobMicros/1e6,userDayUSD:POLICY.userDayMicros/1e6,serviceDayUSD:POLICY.serviceDayMicros/1e6,minutes:POLICY.activeMs/60_000,repairs:POLICY.repairs,ttlMinutes:POLICY.readyMs/60_000,calls:POLICY.calls},infrastructure:store.infrastructureStatus(jobPolicy()),mode:hosting.remote?'private-hosted':'local'}));
   app.get('/api/jobs',(req,res)=>res.json(store.list(req.owner,{dismissed:req.query.dismissed==='1'}).map(publicJob)));
   app.post('/api/jobs',(req,res)=>{
-    if(!config().model.ready||!config().daytona)fail('CONFIG_REQUIRED','선택한 모델 제공사와 Daytona 연결 설정을 확인해주세요.',503);
+    if(!config().model.ready)fail('CONFIG_REQUIRED','선택한 모델 제공사의 연결 설정을 확인해주세요.',503);
     const url=validateURL(String(req.body.url||'')).href;
     if(/[?&](key|api_key|token|access_token|secret|password)=/i.test(url))fail('INVALID_URL','URL에 키를 넣지 마세요. 인증 입력 화면에서 연결할 수 있습니다.');
     const dedup=req.headers['idempotency-key'];if(typeof dedup!=='string'||!/^[\w-]{8,100}$/.test(dedup))fail('INVALID_REQUEST','중복 방지 요청 ID가 필요합니다.');
@@ -91,7 +91,7 @@ export function createApp({store=new Store(),models,sandboxes,orchestrator,hosti
     res.set({'X-Frame-Options':'SAMEORIGIN','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox allow-same-origin allow-popups allow-popups-to-escape-sandbox"}).type('html').send(a.presentation);
   });
   app.post('/api/evaluations/:eid/tasks/:taskId/cancel',async(req,res)=>{await evaluations.cancelTask(req.params.eid,req.owner,req.params.taskId);res.json({ok:true});});
-  app.post('/api/evaluations/:eid/transitions',(req,res)=>{if(!config().model.ready||!config().daytona)fail('CONFIG_REQUIRED','모델·Daytona 연결이 필요합니다.',503);res.status(202).json(publicJob(evaluations.transition(req.params.eid,req.owner,req.body,req.headers['idempotency-key'],jobPolicy())));});
+  app.post('/api/evaluations/:eid/transitions',(req,res)=>{if(!config().model.ready)fail('CONFIG_REQUIRED','모델 연결이 필요합니다.',503);res.status(202).json(publicJob(evaluations.transition(req.params.eid,req.owner,req.body,req.headers['idempotency-key'],jobPolicy())));});
   app.get('/api/evaluations/:eid/jobs/:jobId/mapping',(req,res)=>res.json(evaluations.mapping(req.params.eid,req.owner,req.params.jobId)));
   app.get('/api/evaluations/:eid/jobs/:jobId/recipe',(req,res)=>{const r=evaluations.recipe(req.params.eid,req.owner,req.params.jobId);if(!r.available)fail('NOT_READY',r.reason,409);res.set('Content-Disposition',`attachment; filename="recipe-${req.params.jobId}.md"`).type('text/markdown').send(r.markdown);});
   app.post('/api/evaluations/:eid/reports',(req,res)=>{const r=evaluations.report(req.params.eid,req.owner,req.body);const {markdown,...meta}=r;res.status(r.state==='COMPLETED'?201:202).json(meta);});

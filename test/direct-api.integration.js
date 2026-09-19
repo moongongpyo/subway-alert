@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Store } from '../src/store.js';
+import { Orchestrator } from '../src/orchestrator.js';
+import { DirectApi } from '../src/direct-api.js';
+import { ExecutionEnvironments } from '../src/execution-environments.js';
+import { Evaluations } from '../src/evaluations.js';
+
+test('API preparation and user experiments pass real Chromium with zero sandbox operations',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'pg-direct-browser-')),store=new Store(dir),url='https://api.open-meteo.com/v1/forecast';
+  t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
+  const observed=[],plan={kind:'api',supported:true,reason:'',title:'Weather',description:'Weather',capability:'Weather by coordinates',evidence:'GET forecast',runtime:'none',hasUI:false,port:3001,install:[],start:'',files:[],database:{kind:'none',migrate:[],seed:[],check:''},auth:{kind:'none',name:'',label:'',issueUrl:'',docsUrl:'',instructions:''},fields:[{name:'latitude',label:'위도',type:'number',required:true,location:'query',example:'37.5',description:'latitude'},{name:'longitude',label:'경도',type:'number',required:false,location:'query',example:'127',description:'longitude'}],endpoint:{url,method:'GET',readOnly:true,cost:'free',costEvidence:'test'},adapter:'',healthPath:'/',expected:'latitude'};
+  const api=new DirectApi(store,{request:async address=>{const input=Object.fromEntries(new URL(address).searchParams);observed.push(input);return {status:200,headers:{'content-type':'application/json'},body:Buffer.from(JSON.stringify(input))};}});
+  const runtime=new ExecutionEnvironments(store,{api,sandbox:new Proxy({},{get:()=>()=>assert.fail('API must never use Daytona')})});
+  const models={ask:async(_id,role)=>role==='A'?plan:role==='D'?{fields:[],description:''}:{paths:['/latitude'],allowEmpty:false,description:'latitude 확인'}};
+  const orchestrator=new Orchestrator(store,models,runtime,dir,{collectSource:async()=>({kind:'api',url,direct:true,text:'GET forecast latitude longitude'})});
+  const evaluations=new Evaluations(store,models,runtime,orchestrator,{autoExperience:false});orchestrator.evaluations=evaluations;
+  const j=store.create('local',url,'direct-browser',{userRequests:10,externalMicros:0,sandboxDailyMinutes:0,maxSandboxes:0});
+  await orchestrator.run(j.id,new AbortController().signal);
+  const ready=store.get(j.id);assert.equal(ready.state,'READY',ready.message);assert.equal(ready.executionMode,'node-api');assert.equal(ready.sandboxId,undefined);
+  assert.ok(ready.evidence.some(e=>e.role==='E'&&e.scope==='app-server'));assert.ok(ready.evidence.some(e=>e.role==='P'));assert.equal(ready.apiUsage.external,2);
+  const run=await evaluations.invoke(j.evaluationId,'local',j.id,{latitude:0,longitude:0},'direct-experiment-1');
+  assert.equal(run.state,'succeeded');assert.equal(run.output.latitude,'0');assert.equal(run.environment.resources,'앱 서버 직접 HTTP 호출 · Daytona 미사용');assert.equal(run.cost.daytona,'not_used');
+  assert.equal(observed.length,3);assert.deepEqual(observed[2],{latitude:'0',longitude:'0'});assert.equal(store.get(j.id).apiUsage.userRequests,1);
+  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM infrastructure').get().n,0);
+  await orchestrator.cancel(j.id);assert.equal(store.get(j.id).cleanupPending,false);
+});

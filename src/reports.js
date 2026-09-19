@@ -5,15 +5,16 @@ export function makeRecipe(j){
   const verified=j.verifiedVersion&&j.verifiedVersion===j.version&&j.evidence?.some(e=>e.role==='E');
   if(!verified)return {available:false,reason:'기능·브라우저 검증을 통과한 실행 레시피가 없습니다.'};
   const journal=j.journal||[],commands=journal.filter(x=>x.exitCode===0&&!x.redacted),failures=journal.filter(x=>Number.isInteger(x.exitCode)&&x.exitCode!==0),files=j.recipeFiles||[];
-  const parts=[`# ${line(j.plan.title)} — 확인된 실행 레시피`,`- 대상: ${line(j.url)}\n- 커밋: ${line(j.source?.commit)}\n- 검증 버전: ${line(j.verifiedVersion)}\n- 런타임: ${line(j.plan.runtime)}\n- DB: ${line(j.plan.database.kind)}`,
-    '이 레시피는 원래 Daytona 환경의 성공 기록입니다. 깨끗한 환경에서의 재현은 별도로 검증하지 않았습니다. 다운로드는 명령을 실행하지 않습니다.'];
-  if(!journal.length)parts.push('명령 원장 도입 전 작업입니다. 추측한 설치·실행 명령을 제공하지 않습니다.');
+  const parts=[`# ${line(j.plan.title)} — 확인된 실행 레시피`,`- 대상: ${line(j.url)}\n- 커밋: ${line(j.source?.commit)}\n- 검증 버전: ${line(j.verifiedVersion)}\n- 런타임: ${line(j.executionMode==='node-api'?'Node.js '+j.nodeVersion:j.plan.runtime)}\n- DB: ${line(j.plan.database.kind)}`,
+    j.executionMode==='node-api'?'앱 Node.js 서버에서 직접 HTTP 호출한 검증 기록입니다. 별도 설치·샌드박스는 사용하지 않았습니다. 인증키는 포함하지 않습니다.':'이 레시피는 원래 Daytona 환경의 성공 기록입니다. 깨끗한 환경에서의 재현은 별도로 검증하지 않았습니다. 다운로드는 명령을 실행하지 않습니다.'];
+  if(!journal.length&&j.executionMode!=='node-api')parts.push('명령 원장 도입 전 작업입니다. 추측한 설치·실행 명령을 제공하지 않습니다.');
   if(j.plan.kind==='api')parts.push('## API 호출 계약',block({method:j.plan.endpoint.method,url:j.plan.endpoint.url,fields:j.plan.fields,authentication:{kind:j.plan.auth.kind,name:j.plan.auth.name,issueUrl:j.plan.auth.issueUrl,instructions:j.plan.auth.instructions}}));
-  parts.push('## 실행된 명령');
+  if(j.executionMode==='node-api')parts.push('## 실제 HTTP 호출 기록',block((j.apiRequestHistory||[]).filter(r=>r.version===j.verifiedVersion)));
+  else parts.push('## 실행된 명령');
   for(const c of commands)parts.push(`### ${line(c.kind||'command')} · ${new Date(c.at).toISOString()}\n작업 디렉터리: ${line(c.cwd)}\n환경변수 이름: ${line((c.envNames||[]).join(', ')||'없음')}`,block(c.command),c.observation?`관측한 버전/의존성:\n${block(c.observation)}`:'');
   const starts=journal.filter(c=>c.kind==='start'&&c.version===j.verifiedVersion&&!c.redacted);
   if(starts.length)parts.push('## 검증한 서버 시작 명령',...starts.map(c=>block(c.command)));
-  parts.push('## 실제 업로드한 파일과 적용 순서');for(const f of files)parts.push(`### ${line(f.path)} · 계획 ${f.planVersion}`,block(f.content));
+  if(j.executionMode!=='node-api')parts.push('## 실제 업로드한 파일과 적용 순서');for(const f of files)parts.push(`### ${line(f.path)} · 계획 ${f.planVersion}`,block(f.content));
   parts.push('## 환경변수 설정',j.plan.auth.kind==='none'?'외부 인증 키 불필요.':`이름: ${line(j.plan.auth.name)}\n${line(j.plan.auth.instructions)}\n공식 발급 경로: ${line(j.plan.auth.issueUrl)}`);
   if(j.plan.database.kind!=='none')parts.push('DATABASE_URL: 새 테스트 DB의 연결 정보를 환경변수로 설정하세요. 원래 비밀번호는 내보내지 않습니다. DB 초기화·시드 명령은 테스트 DB에서만 실행하세요.');
   if(journal.some(c=>c.redacted))parts.push('비밀정보가 포함된 명령은 제외했습니다. 위 환경변수 설정을 완료해야 하며 그대로 실행 가능한 완전한 스크립트라고 보장하지 않습니다.');
